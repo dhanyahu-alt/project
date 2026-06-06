@@ -1,1 +1,1 @@
-from .agent import agents
+from .manager import manager
