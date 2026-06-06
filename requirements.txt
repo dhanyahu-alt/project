@@ -1,5 +1,4 @@
 google-adk[database]
-yfinance
 psutil
 litellm
 google-generativeai
@@ -8,7 +7,6 @@ aiosqlite
 pymupdf
 pymupdf4llm
 Pillow
-pdf2image
 chromadb
 pydantic
 sqlalchemy
