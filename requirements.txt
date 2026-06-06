@@ -1,0 +1,14 @@
+google-adk[database]
+yfinance
+psutil
+litellm
+google-generativeai
+python-dotenv
+aiosqlite
+pymupdf
+pymupdf4llm
+Pillow
+pdf2image
+chromadb
+pydantic
+sqlalchemy

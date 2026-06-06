@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment secrets - NEVER commit this
+.env
+*.env
+
+# ADK / ChromaDB storage - local data only
+document_agent/storage/vector_db/
+document_agent/storage/archive/
+document_agent/storage/*.db
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Review files
+day1_review.txt
