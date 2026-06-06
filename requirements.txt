@@ -1,4 +1,4 @@
-google-adk[database]
+google-adk
 psutil
 litellm
 google-generativeai
