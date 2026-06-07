@@ -56,7 +56,6 @@ manager = LlmAgent(
         State keys updated during processing (visible in adk web State panel):
         processing_stage, current_doc_path, current_doc_id,
         current_doc_version, is_reupload, human_approved
-        NOTE: Do NOT use {key} template syntax -- causes KeyError on turn 1.
 
         DOCUMENT PROCESSING WORKFLOW:
         When a user provides a document file path, follow these steps in order.
