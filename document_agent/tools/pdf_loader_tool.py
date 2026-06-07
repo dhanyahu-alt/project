@@ -61,12 +61,12 @@ def load_pdf(file_path: str) -> dict:
     # -- Open and process the PDF --------------------------------------------
     doc = None
     try:
-        print(f"[pdf_loader] Opening PDF: {file_path}")
+        print(f"Opening PDF: {file_path}")
         doc = pymupdf.open(file_path)
 
         page_count = len(doc)
         result["page_count"] = page_count
-        print(f"[pdf_loader] PDF opened successfully — Pages: {page_count}")
+        print(f"PDF opened successfully — Pages: {page_count}")
 
         if page_count == 0:
             result["error"] = "PDF has no pages."
@@ -77,7 +77,7 @@ def load_pdf(file_path: str) -> dict:
         full_text_parts = []
 
         for page_index in range(page_count):
-            print(f"[pdf_loader] Extracting text from page {page_index + 1} of {page_count} ...")
+            print(f"PDF Extracting text from page {page_index + 1} of {page_count} ...")
             page = doc[page_index]
             page_text = page.get_text("text").strip()
             pages_text.append(page_text)
@@ -89,16 +89,16 @@ def load_pdf(file_path: str) -> dict:
         result["text"]  = full_text
 
         total_chars = sum(len(p) for p in pages_text)
-        print(f"[pdf_loader] Text extraction complete — Total characters: {total_chars}")
+        print(f"PDF Text extraction complete — Total characters: {total_chars}")
 
         # -- Detect scanned / image-based PDF --------------------------------
         avg_chars_per_page = total_chars / page_count if page_count > 0 else 0
         result["is_scanned"] = avg_chars_per_page < 50
-        print(f"[pdf_loader] Avg chars/page: {avg_chars_per_page:.1f} — "
+        print(f"PDF Avg chars/page: {avg_chars_per_page:.1f} — "
               f"Is scanned: {result['is_scanned']}")
 
         # -- Extract document keydata ----------------------------------------
-        print(f"[pdf_loader] Reading document for fetching keydata ...")
+        print(f"PDF Reading document for fetching keydata ...")
         raw_meta = doc.metadata or {}
 
         result["keydata"] = {
@@ -114,27 +114,27 @@ def load_pdf(file_path: str) -> dict:
             "extracted_at":    datetime.utcnow().isoformat(),
         }
 
-        print(f"[pdf_loader] keydata — "
+        print(f"PDF keydata — "
               f"Title: {result['keydata']['title']} | "
               f"Author: {result['keydata']['author']} | "
               f"Size: {result['keydata']['file_size_bytes']} bytes")
 
         result["is_success"] = True
-        print(f"[pdf_loader] PDF loaded successfully: {result['file_name']}")
+        print(f"PDF loaded successfully: {result['file_name']}")
         return result
 
     except pymupdf.FileDataError as e:
-        print(f"[pdf_loader] ERROR loading PDF - corrupted or unreadable: {e}")
+        print(f"ERROR loading PDF - corrupted or unreadable: {e}")
         result["error"] = f"PDF is corrupted or unreadable: {str(e)}"
         return result
 
     except PermissionError as e:
-        print(f"[pdf_loader] ERROR — Permission denied: {e}")
+        print(f"PDF ERROR — Permission denied: {e}")
         result["error"] = f"Permission denied reading file: {str(e)}"
         return result
 
     except Exception as e:
-        print(f"[pdf_loader] ERROR — Unexpected: {type(e).__name__}: {e}")
+        print(f"PDF ERROR — Unexpected: {type(e).__name__}: {e}")
         result["error"] = f"Unexpected error reading PDF: {type(e).__name__}: {str(e)}"
         return result
 
@@ -142,7 +142,7 @@ def load_pdf(file_path: str) -> dict:
         if doc is not None:
             try:
                 doc.close()
-                print(f"[pdf_loader] Document handle closed.")
+                print(f"PDF Document handle closed.")
             except Exception:
                 pass
 
@@ -171,7 +171,6 @@ def render_page_as_image(file_path: str, page_index: int = 0,
             height_px   (int)   : Image height in pixels
             error       (str|None): Error message if is_success is False
     """
-    # -- FIX 1: path validation before try — with correct return on not found -
     path = Path(file_path)
     if not path.exists():
         return {
@@ -196,8 +195,8 @@ def render_page_as_image(file_path: str, page_index: int = 0,
 
     doc = None
     try:
-        # -- FIX 2: path already defined above — removed duplicate Path() call -
-        print(f"[pdf_loader] Rendering page {page_index} of: {file_path} at {dpi} DPI ...")
+        # path already defined above — removed duplicate Path() call -
+        print(f"PDF Rendering page {page_index} of: {file_path} at {dpi} DPI ...")
         doc = pymupdf.open(file_path)
 
         if page_index >= len(doc) or page_index < 0:
@@ -230,7 +229,7 @@ def render_page_as_image(file_path: str, page_index: int = 0,
         return result
 
     except Exception as e:
-        print(f"[pdf_loader] ERROR — Render failed: {type(e).__name__}: {e}")
+        print(f"PDF ERROR — Render failed: {type(e).__name__}: {e}")
         result["error"] = f"Error rendering page: {type(e).__name__}: {str(e)}"
         return result
 

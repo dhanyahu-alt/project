@@ -25,7 +25,7 @@ def extract_text_from_image(image_path: str) -> dict:
             char_count   (int)   : Number of characters extracted
             error        (str|None): Error message if is_success is False
     """
-    print(f"inside extract_text_from_image with path: {image_path}")
+    print(f"Inside extract_text_from_image with path: {image_path}")
 
     result = {
         "is_success":      False,
@@ -62,7 +62,7 @@ def extract_text_from_image(image_path: str) -> dict:
         with Image.open(image_path) as img:
             # Convert to RGB if image is in RGBA or palette mode
             if img.mode not in ("RGB", "L"):
-                print(f"[ocr_tool] Converting image mode {img.mode} -> RGB ...")
+                print(f"Inside OCR Converting image mode {img.mode} -> RGB ...")
                 img = img.convert("RGB")
 
             # Save to bytes buffer as JPEG for Gemini
@@ -70,14 +70,14 @@ def extract_text_from_image(image_path: str) -> dict:
             img.save(buffer, format="JPEG", quality=95)
             image_bytes = buffer.getvalue()
 
-        print(f"[ocr_tool] Image loaded — Size: {len(image_bytes)} bytes")
+        print(f"Inside OCR Image loaded — Size: {len(image_bytes)} bytes")
 
         # -- Encode image to base64 for Gemini API ---------------------------
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        print(f"[ocr_tool] Image encoded to base64 successfully")
+        print(f"Inside OCR Image encoded to base64 successfully")
 
         # -- Build Gemini Vision request -------------------------------------
-        print(f"[ocr_tool] Sending image to Gemini Vision ({MODEL_FLASH}) ...")
+        print(f"Inside OCR Sending image to Gemini Vision ({MODEL_FLASH}) ...")
 
         model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
@@ -112,20 +112,20 @@ def extract_text_from_image(image_path: str) -> dict:
         extracted_text = response.text.strip() if response.text else ""
         char_count = len(extracted_text)
 
-        print(f"[ocr_tool] OCR complete — Characters extracted: {char_count}")
+        print(f"OCR complete — Characters extracted: {char_count}")
 
         if char_count == 0:
-            print(f"[ocr_tool] WARNING — No text extracted from image")
+            print(f"OCR WARNING — No text extracted from image")
 
         result["is_success"]     = True
         result["extracted_text"] = extracted_text
         result["char_count"]     = char_count
 
-        print(f"[ocr_tool] ✓ Text extracted successfully from: {result['file_name']}")
+        print(f"OCR Text extracted successfully from: {result['file_name']}")
         return result
 
     except Exception as e:
-        print(f"[ocr_tool] ERROR — OCR failed: {type(e).__name__}: {e}")
+        print(f"ERROR — OCR failed: {type(e).__name__}: {e}")
         result["error"] = f"OCR failed: {type(e).__name__}: {str(e)}"
         return result
 
@@ -150,7 +150,7 @@ def extract_text_from_image_bytes(image_bytes: bytes,
             char_count     (int)  : Number of characters extracted
             error          (str|None): Error message if is_success is False
     """
-    print(f"inside extract_text_from_image_bytes for: {file_name}")
+    print(f"Inside extract_text_from_image_bytes for: {file_name}")
 
     result = {
         "is_success":      False,
@@ -165,10 +165,10 @@ def extract_text_from_image_bytes(image_bytes: bytes,
         return result
 
     try:
-        print(f"[ocr_tool] Encoding {len(image_bytes)} bytes to base64 ...")
+        print(f"OCr Encoding {len(image_bytes)} bytes to base64 ...")
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        print(f"[ocr_tool] Sending image bytes to Gemini Vision ({MODEL_FLASH}) ...")
+        print(f"OCR Sending image bytes to Gemini Vision ({MODEL_FLASH}) ...")
 
         model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
@@ -202,20 +202,20 @@ def extract_text_from_image_bytes(image_bytes: bytes,
         extracted_text = response.text.strip() if response.text else ""
         char_count = len(extracted_text)
 
-        print(f"[ocr_tool] OCR complete — Characters extracted: {char_count}")
+        print(f"OCR complete — Characters extracted: {char_count}")
 
         if char_count == 0:
-            print(f"[ocr_tool] WARNING — No text extracted from image bytes")
+            print(f"OCR WARNING — No text extracted from image bytes")
 
         result["is_success"]     = True
         result["extracted_text"] = extracted_text
         result["char_count"]     = char_count
 
-        print(f"[ocr_tool] ✓ Text extracted successfully from bytes: {file_name}")
+        print(f"OCR Text extracted successfully from bytes: {file_name}")
         return result
 
     except Exception as e:
-        print(f"[ocr_tool] ERROR — OCR failed: {type(e).__name__}: {e}")
+        print(f"OCR ERROR — OCR failed: {type(e).__name__}: {e}")
         result["error"] = f"OCR failed: {type(e).__name__}: {str(e)}"
         return result
 
@@ -270,7 +270,7 @@ def analyze_document_layout(image_path: str) -> dict:
         return result
 
     try:
-        print(f"[ocr_tool] Loading image for layout analysis: {image_path}")
+        print(f"OCR Loading image for layout analysis: {image_path}")
 
         with Image.open(image_path) as img:
             if img.mode not in ("RGB", "L"):
@@ -281,7 +281,7 @@ def analyze_document_layout(image_path: str) -> dict:
 
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        print(f"[ocr_tool] Sending image to Gemini Vision for layout analysis ...")
+        print(f"OCR Sending image to Gemini Vision for layout analysis ...")
 
         model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
@@ -330,7 +330,7 @@ def analyze_document_layout(image_path: str) -> dict:
 
         # -- Parse structured response ---------------------------------------
         response_text = response.text.strip() if response.text else ""
-        print(f"[ocr_tool] Layout analysis response received — parsing ...")
+        print(f"OCR Layout analysis response received — parsing ")
 
         lines = response_text.split("\n")
         parsed = {}
@@ -346,17 +346,17 @@ def analyze_document_layout(image_path: str) -> dict:
         result["has_logo"]           = parsed.get("HAS_LOGO",       "NO").upper() == "YES"
         result["layout_summary"]     = parsed.get("LAYOUT_SUMMARY", response_text)
 
-        print(f"[ocr_tool] Layout analysis — "
+        print(f"OCR Layout analysis — "
               f"Type hint: {result['document_type_hint']} | "
               f"Signature: {result['has_signature']} | "
               f"Tables: {result['has_tables']} | "
               f"Letterhead: {result['has_letterhead']}")
 
         result["is_success"] = True
-        print(f"[ocr_tool] ✓ Layout analysis complete: {result['file_name']}")
+        print(f"OCR Layout analysis complete: {result['file_name']}")
         return result
 
     except Exception as e:
-        print(f"[ocr_tool] ERROR — Layout analysis failed: {type(e).__name__}: {e}")
+        print(f"OCR ERROR — Layout analysis failed: {type(e).__name__}: {e}")
         result["error"] = f"Layout analysis failed: {type(e).__name__}: {str(e)}"
         return result
