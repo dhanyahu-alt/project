@@ -9,4 +9,3 @@ pymupdf4llm
 Pillow
 chromadb
 pydantic
-sqlalchemy
