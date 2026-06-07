@@ -52,12 +52,11 @@ manager = LlmAgent(
         check the url : https://en.wikipedia.org/wiki/Cease_and_desist
 
         CURRENT SESSION STATE:
-        Processing stage    : {processing_stage}
-        Document path       : {current_doc_path}
-        Document ID         : {current_doc_id}
-        Version             : {current_doc_version}
-        Is re-upload        : {is_reupload}
-        Human approved      : {human_approved}
+        The session state is managed automatically via tools.
+        State keys updated during processing (visible in adk web State panel):
+        processing_stage, current_doc_path, current_doc_id,
+        current_doc_version, is_reupload, human_approved
+        NOTE: Do NOT use {key} template syntax -- causes KeyError on turn 1.
 
         DOCUMENT PROCESSING WORKFLOW:
         When a user provides a document file path, follow these steps in order.

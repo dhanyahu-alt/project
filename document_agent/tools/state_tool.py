@@ -1,6 +1,5 @@
 from datetime import datetime
-from google.adk.agents.callback_context import ToolContext
-
+from google.adk.tools import ToolContext
 VALID_STAGES = [
     "LOADING",
     "CLASSIFYING",
