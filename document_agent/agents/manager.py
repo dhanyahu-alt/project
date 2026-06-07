@@ -20,7 +20,7 @@ from ..tools.vector_db_tool import (
     find_similar_documents,
     check_duplicate_document,
 )
-from ..tools.state_tools import (
+from ..tools.state_tool import (
     update_processing_stage,
     set_current_document,
 )
