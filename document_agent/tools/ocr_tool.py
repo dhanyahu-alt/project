@@ -1,6 +1,6 @@
 import base64
 from pathlib import Path
-import google.generativeai as genai
+import google.genai as genai
 from PIL import Image
 import io
 from ..util.settings import MODEL_FLASH
@@ -79,7 +79,7 @@ def extract_text_from_image(image_path: str) -> dict:
         # -- Build Gemini Vision request -------------------------------------
         print(f"Inside OCR Sending image to Gemini Vision ({MODEL_FLASH}) ...")
 
-        model = genai.GenerativeModel(model_name=MODEL_FLASH)
+        #model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
         prompt = (
             "You are a document OCR specialist. "
@@ -89,8 +89,10 @@ def extract_text_from_image(image_path: str) -> dict:
             "Do not summarize, interpret, or add any commentary. "
             "Return only the raw extracted text."
         )
+        client = genai.Client()
 
-        response = model.generate_content(
+        response = client.models.generate_content(
+            model=MODEL_FLASH,
             contents=[
                 {
                     "parts": [
@@ -170,7 +172,7 @@ def extract_text_from_image_bytes(image_bytes: bytes,
 
         print(f"OCR Sending image bytes to Gemini Vision ({MODEL_FLASH}) ...")
 
-        model = genai.GenerativeModel(model_name=MODEL_FLASH)
+        #model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
         prompt = (
             "You are a document OCR specialist. "
@@ -180,8 +182,9 @@ def extract_text_from_image_bytes(image_bytes: bytes,
             "Do not summarize, interpret, or add any commentary. "
             "Return only the raw extracted text."
         )
-
-        response = model.generate_content(
+        client = genai.Client()
+        response = client.models.generate_content(
+            model=MODEL_FLASH,
             contents=[
                 {
                     "parts": [
@@ -283,7 +286,7 @@ def analyze_document_layout(image_path: str) -> dict:
 
         print(f"OCR Sending image to Gemini Vision for layout analysis ...")
 
-        model = genai.GenerativeModel(model_name=MODEL_FLASH)
+        #model = genai.GenerativeModel(model_name=MODEL_FLASH)
 
         prompt = (
             "Analyze the layout and visual structure of this document image. "
@@ -309,8 +312,9 @@ def analyze_document_layout(image_path: str) -> dict:
             "HAS_LOGO: <YES/NO>\n"
             "LAYOUT_SUMMARY: <description>"
         )
-
-        response = model.generate_content(
+        client = genai.Client()
+        response = client.models.generate_content(
+            model=MODEL_FLASH,
             contents=[
                 {
                     "parts": [

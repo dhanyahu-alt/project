@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import chromadb
-import google.generativeai as genai
+import google.genai as genai
 
 from ..util.settings import (
     VECTOR_DB_PATH,
@@ -142,12 +142,13 @@ def generate_embedding(text: str, task_type: str) -> List[float]:
         Exception: If the Gemini API call fails.
     """
     try:
-        response = genai.embed_content(
+        client = genai.Client()
+        response = client.models.embed_content(
             model=EMBEDDING_MODEL,
-            content=text,
-            task_type=task_type,
+            contents=text,
+            config={"task_type": task_type}
         )
-        embedding = response["embedding"]
+        embedding = response.embeddings[0].values
         return embedding
 
     except Exception as e:
