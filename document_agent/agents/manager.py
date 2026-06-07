@@ -75,8 +75,7 @@ manager = LlmAgent(
 
         If found is True (file was processed before -- this is a re-upload):
             Inform the user:
-                "This document was previously processed as version {version}.
-                 A new version {version + 1} will be created."
+                "This document was previously processed. A new version will be created."
             Set is_reupload = True
             Note the previous doc_id for reference
 
@@ -92,7 +91,7 @@ manager = LlmAgent(
         If is_duplicate is True:
             Inform the user:
                 "Warning: This document appears to be very similar to
-                 {similar_doc_id} (similarity: {score}).
+                 similar document found in the vector db.
                  Do you want to process it anyway?"
             Wait for user confirmation before proceeding.
             If user says No: stop processing and inform the user.
@@ -145,7 +144,7 @@ manager = LlmAgent(
         If is_success is True:
             Update state with actual doc_id, version, is_reupload from result.
             Call set_current_document with actual values from save result.
-            Inform user: "Document saved as {doc_id} (version {version})"
+            Inform user: "Document saved successfully. Check the tool result for doc_id and version."
 
         STEP 5 -- INDEX IN VECTOR DB
         Call update_processing_stage("INDEXED")
@@ -153,28 +152,27 @@ manager = LlmAgent(
         Call index_document_in_vector_db with:
             doc_id   = doc_id from Step 4 result
             text     = full extracted text from Step 3
-            metadata = {
-                "doc_type":    "UNKNOWN",
-                "file_name":   file_name,
-                "version":     version from Step 4,
-                "is_latest":   1,
-                "is_reupload": is_reupload from Step 4
-            }
+            Pass a metadata dict to index_document_in_vector_db containing:
+                doc_type    = "UNKNOWN"
+                file_name   = the file_name from load_pdf result
+                version     = the version number from save_document_to_db result
+                is_latest   = 1
+                is_reupload = the is_reupload value from save_document_to_db result
 
         If is_success is True:
-            Inform user: "Document indexed in vector db.
-                          Chunks indexed: {chunks_indexed}"
+            Inform user: "Document indexed in vector db successfully.
+                          Check the tool result for chunks_indexed count."
 
         STEP 6 -- COMPLETE
         Call update_processing_stage("COMPLETE")
 
-        Report final summary to user:
-            - Document ID: {doc_id}
-            - Version: {version}
-            - File: {file_name}
-            - Pages: {page_count}
-            - Chunks indexed: {chunks_indexed}
-            - Re-upload: {is_reupload}
+        Report final summary to user using the results from the tool calls:
+            - Document ID: from save_document_to_db result doc_id field
+            - Version: from save_document_to_db result version field
+            - File: from load_pdf result file_name field
+            - Pages: from load_pdf result page_count field
+            - Chunks indexed: from index_document_in_vector_db result chunks_indexed field
+            - Re-upload: from save_document_to_db result is_reupload field
             - Status: COMPLETE
 
         IMPORTANT RULES:
