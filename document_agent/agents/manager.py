@@ -58,24 +58,14 @@ from ..agents.batch_processor import (
     generate_batch_summary,
 )
 
-def combined_before_tool(tool_context, args):
-    """Combined before-tool callback -- audit all tools, HITL gate for save.
+def combined_before_tool(tool, args, tool_context):
+    """Combined before-tool callback -- audit all tools, HITL gate for save."""
 
-    Runs before_tool_audit on every tool call for the audit trail.
-    Then routes to before_save_to_db_callback only when the tool being
-    called is save_document_to_db -- this is the Human-in-the-Loop gate.
-    The HITL gate now also handles auto-timeout decisions (Day 6).
-
-    Returns:
-        None  -- for all tools except save_document_to_db (allows execution)
-        dict  -- from HITL gate when human has not approved (blocks save)
-        None  -- from HITL gate when human has approved or auto-approved
-    """
     # Step 1: always audit every tool call
     before_tool_audit(tool_context, args)
 
     # Step 2: only apply HITL gate to save_document_to_db
-    tool_name = getattr(tool_context, 'tool_name', '')
+    tool_name = getattr(tool, 'name', '') or getattr(tool_context, 'tool_name', '')
     if tool_name == 'save_document_to_db':
         return before_save_to_db_callback(tool_context, args)
 
