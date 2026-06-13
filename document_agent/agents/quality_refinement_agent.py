@@ -114,6 +114,6 @@ quality_check_agent = LlmAgent(
 
 quality_refinement_loop = LoopAgent(
     name="quality_refinement_loop",
-    sub_agent=quality_check_agent,
+    sub_agents=[quality_check_agent],
     max_iterations=2,
 )
