@@ -323,25 +323,11 @@ def before_tool_audit(tool_context: ToolContext, args: dict) -> None:
     return None
 
 
-def after_tool_audit(tool_context: ToolContext,
-                     result: dict) -> None:
-    """Audit callback that fires after any tool returns its result.
-
-    Records a TOOL_RESULT event with the tool name and sanitized
-    result in the audit_trail table.
-
-    Attach to any LlmAgent as:
-        after_tool_callback = after_tool_audit
-
-    Args:
-        tool_context: ADK ToolContext with tool name and state access
-        result      : Dict returned by the tool
-
-    Returns:
-        None -- always. Returning a dict would REPLACE the tool result.
-    """
+def after_tool_audit(tool, args, tool_context: ToolContext,
+                     tool_response: dict) -> None:
+    """Audit callback that fires after any tool returns its result."""
     try:
-        tool_name  = getattr(tool_context, 'tool_name', 'unknown_tool')
+        tool_name  = getattr(tool, 'name', None) or getattr(tool_context, 'tool_name', 'unknown_tool')
         session_id = ""
         user_id    = ""
 
@@ -349,15 +335,15 @@ def after_tool_audit(tool_context: ToolContext,
             session_id = str(tool_context.session.id)
         except Exception:
             pass
+
         try:
             user_id = str(tool_context.session.user_id)
         except Exception:
             pass
 
-        # Sanitize result for logging
         safe_result = {}
         try:
-            for k, v in (result or {}).items():
+            for k, v in (tool_response or {}).items():
                 if k == "text" and isinstance(v, str) and len(v) > 200:
                     safe_result[k] = v[:200] + "... [truncated]"
                 elif k == "image_bytes":
@@ -370,17 +356,15 @@ def after_tool_audit(tool_context: ToolContext,
             safe_result = {}
 
         output_summary = json.dumps(safe_result)[:300]
-        is_success     = result.get("is_success", "unknown") if result else "unknown"
-
-        print(f"TOOL_RESULT -- {tool_name} | "
-              f"is_success: {is_success}")
+        is_success     = tool_response.get("is_success", "unknown") if tool_response else "unknown"
 
         _write_audit_record(
-            session_id     = session_id,
-            user_id        = user_id,
-            agent_name     = tool_name,
-            event_type     = "TOOL_RESULT",
+            session_id    = session_id,
+            user_id       = user_id,
+            agent_name    = tool_name,
+            event_type    = "TOOL_RESULT",
             output_summary = output_summary,
+            state_snapshot = _get_state_snapshot(tool_context),
         )
 
     except Exception as e:
