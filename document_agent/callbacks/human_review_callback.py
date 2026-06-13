@@ -7,23 +7,33 @@ from google.adk.tools import ToolContext
 from ..storage.database import get_connection
 
 
-def _write_hitl_audit(session_id:    str,
-                      user_id:       str,
-                      event_type:    str,
-                      input_summary: str = "",
-                      output_summary:str = "") -> None:
+# Confidence threshold for auto-approval decision
+CONFIDENCE_THRESHOLD = 0.90
+
+
+# ============================================================================
+# HELPER -- Write HITL-specific audit record
+# ============================================================================
+
+def _write_hitl_audit(session_id:     str,
+                      user_id:        str,
+                      event_type:     str,
+                      input_summary:  str = "",
+                      output_summary: str = "") -> None:
     """Writes a Human-in-the-Loop specific audit record.
 
-    Records HUMAN_DECISION_REQUESTED and HUMAN_DECISION events
-    in the audit_trail table. These are distinct from the regular
-    TOOL_CALL / TOOL_RESULT events written by audit_callback.py.
+    Records HUMAN_DECISION_REQUESTED, HUMAN_APPROVED, and AUTO_DECISION
+    events in the audit_trail table. These are distinct from the regular
+    TOOL_CALL and TOOL_RESULT events written by audit_callback.py.
 
     Args:
         session_id    : ADK session identifier
         user_id       : ADK user identifier
-        event_type    : HUMAN_DECISION_REQUESTED or HUMAN_DECISION
-        input_summary : Data presented to the human for review
-        output_summary: Human's decision (APPROVED or REJECTED)
+        event_type    : HUMAN_DECISION_REQUESTED / HUMAN_APPROVED /
+                        AUTO_DECISION
+        input_summary : Data presented for review or timeout details
+        output_summary: Decision made (APPROVED / AUTO_APPROVED /
+                        AUTO_REJECTED)
     """
     try:
         with get_connection() as conn:
@@ -50,26 +60,216 @@ def _write_hitl_audit(session_id:    str,
         print(f"[hitl_callback] WARNING -- audit write failed: "
               f"{type(e).__name__}: {e}")
 
+
+# ============================================================================
+# HELPER -- Check if review timeout has expired
+# ============================================================================
+
+def _is_review_timed_out(tool_context: ToolContext) -> bool:
+    """Checks whether the human review timeout period has expired.
+
+    Reads review_started_at and review_timeout_mins from session state.
+    Returns True if the elapsed time since the review was requested
+    exceeds the configured timeout. Returns False if the timeout has
+    not expired or if the review has not started yet.
+
+    Args:
+        tool_context: ADK ToolContext with session state access
+
+    Returns:
+        bool: True if timeout has expired, False otherwise
+    """
+    try:
+        started_at   = tool_context.state.get("review_started_at",   None)
+        timeout_mins = tool_context.state.get("review_timeout_mins", 60)
+
+        if not started_at:
+            print(f"[hitl_callback] review_started_at not set -- "
+                  f"timeout check skipped")
+            return False
+
+        start_dt = datetime.fromisoformat(started_at)
+        elapsed  = datetime.utcnow() - start_dt
+        elapsed_mins = elapsed.total_seconds() / 60
+
+        print(f"[hitl_callback] Review elapsed: {elapsed_mins:.1f} min "
+              f"(timeout: {timeout_mins} min)")
+
+        if elapsed_mins > timeout_mins:
+            print(f"[hitl_callback] TIMEOUT -- review period expired after "
+                  f"{elapsed_mins:.1f} minutes")
+            return True
+
+        print(f"[hitl_callback] Review still within timeout period")
+        return False
+
+    except Exception as e:
+        print(f"[hitl_callback] WARNING -- timeout check error: "
+              f"{type(e).__name__}: {e}")
+        return False
+
+
+# ============================================================================
+# HELPER -- Handle auto-decision after timeout
+# ============================================================================
+
+def _handle_auto_decision(tool_context: ToolContext,
+                           args:        dict,
+                           session_id:  str,
+                           user_id:     str) -> Optional[dict]:
+    """Fires the auto-decision after the review timeout expires.
+
+    Checks the document's confidence_score and either auto-approves
+    (confidence >= 0.90) or auto-rejects (confidence < 0.90).
+    Records the decision in audit_trail as AUTO_DECISION.
+
+    This function is called only once per document -- the
+    auto_decision_fired flag in session state prevents double-firing
+    if save_document_to_db is called again after the auto-decision.
+
+    Args:
+        tool_context: ADK ToolContext with session state access
+        args        : Arguments passed to save_document_to_db
+        session_id  : ADK session identifier for audit record
+        user_id     : ADK user identifier for audit record
+
+    Returns:
+        None  -- if auto-approved (allows save_document_to_db to execute)
+        dict  -- if auto-rejected (blocks save_document_to_db)
+    """
+    print(f"[hitl_callback] _handle_auto_decision called")
+
+    # -- Prevent double-firing -----------------------------------------------
+    if tool_context.state.get("auto_decision_fired", False):
+        print(f"[hitl_callback] auto_decision already fired -- skipping")
+        # If previously auto-approved, human_approved is True -- allow save
+        if tool_context.state.get("human_approved", False):
+            return None
+        # If previously auto-rejected, block the save
+        return {
+            "is_success": False,
+            "status":     "AUTO_REJECTED",
+            "message":    (
+                "This document was previously auto-rejected due to review "
+                "timeout and low confidence. Please re-process if needed."
+            ),
+        }
+
+    # Mark as fired to prevent double-firing
+    tool_context.state["auto_decision_fired"] = True
+
+    # -- Read confidence score from args -------------------------------------
+    confidence = 0.0
+    try:
+        confidence = float(args.get("confidence_score", 0.0))
+    except (ValueError, TypeError):
+        confidence = 0.0
+
+    now = datetime.utcnow().isoformat()
+    print(f"[hitl_callback] Auto-decision -- confidence: {confidence} | "
+          f"threshold: {CONFIDENCE_THRESHOLD}")
+
+    # ========================================================================
+    # AUTO-APPROVE (confidence >= threshold)
+    # ========================================================================
+    if confidence >= CONFIDENCE_THRESHOLD:
+        print(f"[hitl_callback] AUTO-APPROVED -- "
+              f"confidence {confidence} >= {CONFIDENCE_THRESHOLD}")
+
+        # Update session state to reflect auto-approval
+        tool_context.state["human_approved"]     = True
+        tool_context.state["approved_by"]        = "auto_timeout"
+        tool_context.state["approval_timestamp"] = now
+
+        # Write AUTO_DECISION audit record
+        _write_hitl_audit(
+            session_id     = session_id,
+            user_id        = user_id,
+            event_type     = "AUTO_DECISION",
+            input_summary  = (
+                f"Timeout expired | "
+                f"confidence: {confidence} | "
+                f"threshold: {CONFIDENCE_THRESHOLD}"
+            ),
+            output_summary = (
+                f"AUTO_APPROVED -- "
+                f"confidence {confidence} >= {CONFIDENCE_THRESHOLD}"
+            ),
+        )
+
+        # Return None to ALLOW save_document_to_db to execute
+        return None
+
+    # ========================================================================
+    # AUTO-REJECT (confidence < threshold)
+    # ========================================================================
+    else:
+        print(f"[hitl_callback] AUTO-REJECTED -- "
+              f"confidence {confidence} < {CONFIDENCE_THRESHOLD}")
+
+        # Update session state to reflect auto-rejection
+        tool_context.state["human_approved"]   = False
+        tool_context.state["needs_correction"] = True
+        tool_context.state["rejected_at"]      = now
+        tool_context.state["rejected_by"]      = "auto_timeout"
+
+        # Write AUTO_DECISION audit record
+        _write_hitl_audit(
+            session_id     = session_id,
+            user_id        = user_id,
+            event_type     = "AUTO_DECISION",
+            input_summary  = (
+                f"Timeout expired | "
+                f"confidence: {confidence} | "
+                f"threshold: {CONFIDENCE_THRESHOLD}"
+            ),
+            output_summary = (
+                f"AUTO_REJECTED -- "
+                f"confidence {confidence} < {CONFIDENCE_THRESHOLD}"
+            ),
+        )
+
+        # Return a DICT to BLOCK save_document_to_db from executing
+        return {
+            "is_success": False,
+            "status":     "AUTO_REJECTED",
+            "message":    (
+                f"Review timeout of 60 minutes has expired. "
+                f"Document auto-rejected because confidence score "
+                f"{confidence:.2f} is below the threshold "
+                f"{CONFIDENCE_THRESHOLD}. "
+                "Please re-process the document if needed."
+            ),
+            "confidence": confidence,
+            "threshold":  CONFIDENCE_THRESHOLD,
+        }
+
+
+# ============================================================================
+# HUMAN-IN-THE-LOOP GATE (updated with timeout check)
+# ============================================================================
+
 def before_save_to_db_callback(tool_context: ToolContext,
                                 args: dict) -> Optional[dict]:
     """Human-in-the-Loop gate -- intercepts save_document_to_db.
 
-    Fires as a before_tool_callback. Checks whether a human has
-    approved the document save. If not approved, skips the tool
-    and returns a review request to the user. If approved, allows
-    the tool to execute normally.
+    Fires as a before_tool_callback via combined_before_tool in manager.py.
+    Checks whether a human has approved the document save. If the review
+    timeout has expired, makes an automatic decision. If neither condition
+    is met, blocks the save and requests human review.
 
-    CRITICAL: This callback is ONLY meant for the save_document_to_db
-    tool. The combined_before_tool wrapper in manager.py routes calls
-    here only when tool_name == 'save_document_to_db'.
+    LOGIC ORDER:
+      1. human_approved = True  -> HUMAN_APPROVED  -> return None (allow)
+      2. timeout expired        -> AUTO_DECISION    -> return None or dict
+      3. neither                -> HUMAN_DECISION_REQUESTED -> return dict
 
     Args:
-        tool_context: ADK ToolContext with state access
+        tool_context: ADK ToolContext with session state access
         args        : Arguments being passed to save_document_to_db
 
     Returns:
-        dict  -- if human has NOT approved yet (SKIPS the tool)
-        None  -- if human HAS approved (ALLOWS the tool to execute)
+        None -- if approved (human or auto) -- ALLOWS tool to execute
+        dict -- if blocked (pending or auto-rejected) -- SKIPS tool
     """
     print(f"[hitl_callback] before_save_to_db_callback fired")
 
@@ -86,75 +286,88 @@ def before_save_to_db_callback(tool_context: ToolContext,
         pass
 
     try:
-        # -- Step A: Check if human has already approved ------------------
+        # ====================================================================
+        # CHECK 1 -- Has the human already approved?
+        # ====================================================================
         human_approved = tool_context.state.get("human_approved", False)
         print(f"[hitl_callback] human_approved = {human_approved}")
 
-        # -- Step B: If NOT approved -- intercept and block the save ------
-        if not human_approved:
-            print(f"[hitl_callback] Save blocked -- awaiting human approval")
+        if human_approved:
+            print(f"[hitl_callback] Human approved -- allowing save")
 
-            # Store pending data in session state for retrieval later
-            tool_context.state["pending_review"] = True
-            tool_context.state["pending_data"]   = json.dumps(
-                _sanitize_args_for_review(args)
-            )
-            tool_context.state["processing_stage"] = "AWAITING_APPROVAL"
-
-            # Build the review summary to present to the user
-            review_summary = _build_review_summary(args)
-
-            # Write audit record
             _write_hitl_audit(
-                session_id    = session_id,
-                user_id       = user_id,
-                event_type    = "HUMAN_DECISION_REQUESTED",
-                input_summary = review_summary[:300],
+                session_id     = session_id,
+                user_id        = user_id,
+                event_type     = "HUMAN_APPROVED",
+                output_summary = "Human approved -- save_document_to_db executing",
             )
 
-            # RETURN A DICT -- this SKIPS the save_document_to_db tool
-            # The manager receives this dict as the tool result instead
-            return {
-                "is_success":     False,
-                "status":         "PENDING_HUMAN_APPROVAL",
-                "message":        (
-                    "Document has been processed and validated. "
-                    "Please review the extracted data below and "
-                    "type APPROVE to save to the database, "
-                    "or REJECT to discard this document."
-                ),
-                "review_summary": review_summary,
-                "doc_type":       args.get("doc_type",   "UNKNOWN"),
-                "file_name":      args.get("file_name",  ""),
-                "confidence":     args.get("confidence_score", 0.0),
-                "instructions":   (
-                    "Call process_human_decision with APPROVE or REJECT."
-                ),
-            }
+            # Reset for next document
+            tool_context.state["human_approved"] = False
+            tool_context.state["pending_review"] = False
+            tool_context.state["pending_data"]   = None
 
-        # -- Step C: If approved -- allow the save to proceed -------------
-        print(f"[hitl_callback] Human approved -- allowing save to proceed")
+            # RETURN None -- ALLOWS the tool to execute
+            return None
 
-        # Write audit record for the approval
+        # ====================================================================
+        # CHECK 2 -- Has the review timeout expired?
+        # ====================================================================
+        if _is_review_timed_out(tool_context):
+            print(f"[hitl_callback] Timeout expired -- firing auto-decision")
+            return _handle_auto_decision(
+                tool_context = tool_context,
+                args         = args,
+                session_id   = session_id,
+                user_id      = user_id,
+            )
+
+        # ====================================================================
+        # CHECK 3 -- Neither approved nor timed out -- request human review
+        # ====================================================================
+        print(f"[hitl_callback] Save blocked -- awaiting human approval")
+
+        # Store pending data in state
+        tool_context.state["pending_review"] = True
+        tool_context.state["pending_data"]   = json.dumps(
+            _sanitize_args_for_review(args)
+        )
+        tool_context.state["processing_stage"] = "AWAITING_APPROVAL"
+
+        review_summary = _build_review_summary(args)
+
         _write_hitl_audit(
-            session_id     = session_id,
-            user_id        = user_id,
-            event_type     = "HUMAN_APPROVED",
-            output_summary = "Human approved -- save_document_to_db executing",
+            session_id    = session_id,
+            user_id       = user_id,
+            event_type    = "HUMAN_DECISION_REQUESTED",
+            input_summary = review_summary[:300],
         )
 
-        # Reset approval state for the next document
-        tool_context.state["human_approved"] = False
-        tool_context.state["pending_review"] = False
-        tool_context.state["pending_data"]   = None
-
-        # RETURN None -- this ALLOWS the tool to execute normally
-        return None
+        # RETURN a DICT -- SKIPS the save_document_to_db tool
+        return {
+            "is_success":     False,
+            "status":         "PENDING_HUMAN_APPROVAL",
+            "message":        (
+                "Document has been processed and validated. "
+                "Please review the extracted data below and "
+                "type APPROVE to save to the database, "
+                "or REJECT to discard this document. "
+                "If no response is received within 60 minutes, "
+                "the system will automatically approve documents "
+                "with confidence 0.90 or above and reject those below."
+            ),
+            "review_summary": review_summary,
+            "doc_type":       args.get("doc_type",         "UNKNOWN"),
+            "file_name":      args.get("file_name",        ""),
+            "confidence":     args.get("confidence_score", 0.0),
+            "instructions":   (
+                "Call process_human_decision with APPROVE or REJECT."
+            ),
+        }
 
     except Exception as e:
         print(f"[hitl_callback] ERROR in before_save_to_db_callback: "
               f"{type(e).__name__}: {e}")
-        # On unexpected error -- block the save to be safe
         return {
             "is_success": False,
             "status":     "CALLBACK_ERROR",
@@ -165,12 +378,15 @@ def before_save_to_db_callback(tool_context: ToolContext,
             "error": str(e),
         }
 
+
+# ============================================================================
+# HELPERS -- Sanitize and summarize for review
+# ============================================================================
+
 def _sanitize_args_for_review(args: dict) -> dict:
     """Prepares tool args for storage in session state as pending_data.
 
     Truncates large text fields so session state does not bloat.
-    raw_text is truncated to 500 chars -- enough for context but
-    not the full document.
 
     Args:
         args: The tool arguments dict from save_document_to_db
@@ -184,7 +400,7 @@ def _sanitize_args_for_review(args: dict) -> dict:
             if k == "raw_text" and isinstance(v, str) and len(v) > 500:
                 sanitized[k] = v[:500] + "... [truncated for review]"
             elif k == "extracted_data" and isinstance(v, dict):
-                sanitized[k] = v   # keep full extracted data for review
+                sanitized[k] = v
             else:
                 sanitized[k] = v
     except Exception:
@@ -194,9 +410,6 @@ def _sanitize_args_for_review(args: dict) -> dict:
 
 def _build_review_summary(args: dict) -> str:
     """Builds a human-readable summary of the document for review.
-
-    Creates a clear, concise text summary of the key fields so the
-    human reviewer can quickly assess the extraction quality.
 
     Args:
         args: The tool arguments dict from save_document_to_db
@@ -229,6 +442,10 @@ def _build_review_summary(args: dict) -> str:
 
         lines.append("=" * 50)
         lines.append("Type APPROVE to save or REJECT to discard.")
+        lines.append(
+            "Note: If no response within 60 minutes, the system will "
+            "auto-decide based on confidence score."
+        )
         return "\n".join(lines)
 
     except Exception as e:

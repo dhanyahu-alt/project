@@ -1,12 +1,14 @@
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 from ..util.settings import MODEL_FLASH
+
 from ..tools.pdf_loader_tool import load_pdf, render_page_as_image
 from ..tools.ocr_tool import (
     extract_text_from_image,
     extract_text_from_image_bytes,
     analyze_document_layout,
 )
+
 from ..tools.database_tool import (
     save_document_to_db,
     query_documents,
@@ -24,6 +26,7 @@ from ..tools.state_tool import (
     update_processing_stage,
     set_current_document,
 )
+
 from .classification_agent    import classification_agent
 from .loa_extraction_agent    import loa_extraction_agent
 from .notice_extraction_agent import notice_extraction_agent
@@ -45,8 +48,15 @@ from ..callbacks.audit_callback import (
     before_tool_audit,
     after_tool_audit,
 )
-  
 from ..callbacks.human_review_callback import before_save_to_db_callback
+
+from .processing_pipeline      import processing_pipeline
+from .quality_refinement_agent import quality_refinement_loop
+
+from ..agents.batch_processor import (
+    get_documents_in_folder,
+    generate_batch_summary,
+)
 
 def combined_before_tool(tool_context, args):
     """Combined before-tool callback -- audit all tools, HITL gate for save.
@@ -54,11 +64,12 @@ def combined_before_tool(tool_context, args):
     Runs before_tool_audit on every tool call for the audit trail.
     Then routes to before_save_to_db_callback only when the tool being
     called is save_document_to_db -- this is the Human-in-the-Loop gate.
+    The HITL gate now also handles auto-timeout decisions (Day 6).
 
     Returns:
         None  -- for all tools except save_document_to_db (allows execution)
         dict  -- from HITL gate when human has not approved (blocks save)
-        None  -- from HITL gate when human has approved (allows save)
+        None  -- from HITL gate when human has approved or auto-approved
     """
     # Step 1: always audit every tool call
     before_tool_audit(tool_context, args)
@@ -98,6 +109,8 @@ manager = LlmAgent(
         validation_tool,
         process_human_decision,
         archive_document,
+        get_documents_in_folder,
+        generate_batch_summary,
     ],
     before_agent_callback = before_agent_audit,
     after_agent_callback  = after_agent_audit,
@@ -112,11 +125,46 @@ manager = LlmAgent(
     The session state is managed automatically via tools.
     State keys updated during processing (visible in adk web State panel):
     processing_stage, current_doc_path, current_doc_id,
-    current_doc_version, is_reupload, human_approved
+    current_doc_version, is_reupload, human_approved,
+    review_started_at, review_timeout_mins
 
     DOCUMENT PROCESSING WORKFLOW:
-    When a user provides a document file path, follow these steps in order.
-    Call update_processing_stage at the start of each major step.
+
+    There are two processing paths depending on user input:
+      Path A: Single document -- user provides a file path
+      Path B: Batch documents -- user provides a folder path
+
+    -------------------------------------------------------------------------
+    PATH B -- BATCH PROCESSING (when user provides a folder path)
+    -------------------------------------------------------------------------
+    If the user provides a folder path instead of a single file path:
+
+    Call update_processing_stage with BATCH_LOADING.
+    Call get_documents_in_folder with the folder path.
+
+    If is_success is False:
+        Report the error to the user and stop.
+
+    If count is 0:
+        Inform user no PDF files were found in the folder.
+        Ask user to check the folder path and try again.
+
+    If count is greater than 0:
+        Inform user: "Found N PDF files. Processing each document..."
+        For each file_path in the pdf_files list:
+            Process it through Path A (Steps 0-8 below).
+            Collect each result into a batch results list.
+        Write the batch results list to session state key app:batch_results.
+        Call generate_batch_summary to produce the consolidated report.
+        Call update_processing_stage with BATCH_COMPLETE.
+        Present the summary to the user:
+            Total processed, successful, failed,
+            breakdown by document type, average confidence score.
+
+    -------------------------------------------------------------------------
+    PATH A -- SINGLE DOCUMENT PROCESSING
+    -------------------------------------------------------------------------
+    When user provides a single file path, follow Steps 0 through 8.
 
     -------------------------------------------------------------------------
     STEP 0 -- SET STATE
@@ -145,34 +193,38 @@ manager = LlmAgent(
         Note is_reupload = False.
 
     -------------------------------------------------------------------------
-    STEP 2 -- LOAD DOCUMENT
+    STEP 2 -- LOAD AND CLASSIFY AND EXTRACT AND VALIDATE (Pipeline)
     -------------------------------------------------------------------------
-    Call load_pdf with the file path provided.
+    Call update_processing_stage with PIPELINE_RUNNING.
 
-    If is_success is False:
+    Run the document_processing_pipeline. The pipeline will:
+        Stage 1: Load the PDF and write raw_text to session state
+        Stage 2: Classify the document and write doc_type to session state
+        Stage 3: Extract structured fields and write extraction_result to state
+        Stage 4: Validate extraction and write validation_result to state
+
+    After the pipeline completes, read the following from session state:
+        raw_text, doc_type, extraction_result, validation_result,
+        review_required, pipeline_failed, page_count, file_name
+
+    If pipeline_failed is True:
+        Read pipeline_error from state.
         Report the error to the user and stop processing.
 
-    If is_success is True:
-        Note the file_name, page_count, is_scanned values from the result.
+    If doc_type is UNKNOWN:
+        Inform the user the document could not be classified.
+        Stop processing.
 
-    If is_scanned is True:
-        Call render_page_as_image for each page to get image bytes.
-        Call extract_text_from_image_bytes with the image bytes.
-        Call analyze_document_layout on the first page for layout hints.
-        Use extracted_text from OCR as the working document text.
-
-    If is_scanned is False:
-        Use the text field from load_pdf result as the working document text.
-
-    Report to the user:
+    Inform the user:
         - File name and page count
-        - Whether the document was scanned or text-based
-        - A preview of the first 300 characters of extracted text
+        - Document type and classification confidence
+        - Preview of first 300 characters of raw_text
+        - Whether extraction succeeded
 
     -------------------------------------------------------------------------
     STEP 2b -- DUPLICATE CHECK
     -------------------------------------------------------------------------
-    Call check_duplicate_document with the full extracted text.
+    Call check_duplicate_document with the raw_text from session state.
 
     If is_duplicate is True:
         Inform the user:
@@ -186,127 +238,152 @@ manager = LlmAgent(
         Continue processing normally.
 
     -------------------------------------------------------------------------
-    STEP 3 -- CLASSIFY DOCUMENT
+    STEP 5a -- QUALITY REFINEMENT (if confidence is borderline)
     -------------------------------------------------------------------------
-    Call update_processing_stage with CLASSIFYING
+    After the pipeline completes, check the confidence_score from
+    validation_result in session state:
 
-    Call classification_tool with the full extracted document text as input.
+    If confidence is 0.90 or above:
+        Skip quality refinement entirely.
+        Proceed directly to Step 5b (human review).
 
-    From the classification result note:
-        doc_type                    (LOA, NOTICE, BUSINESS, or UNKNOWN)
-        confidence_score            (0.0 to 1.0)
-        reasoning                   (explanation of classification decision)
-        suggested_extraction_agent  (which extraction agent to call next)
+    If confidence is between 0.70 and 0.90:
+        Inform user: "Confidence is borderline.
+                      Running quality refinement loop to try to improve it.
+                      This may take a moment."
+        Run quality_refinement_loop (up to 2 iterations).
+        After loop completes, read the updated validation_result and
+        extraction_result from session state.
+        Proceed to Step 5b with the updated results.
+
+    If confidence is below 0.70:
+        Skip quality refinement -- loop cannot reliably help at this level.
+        Proceed directly to Step 5b (human review).
+
+    -------------------------------------------------------------------------
+    STEP 5b -- PRESENT FOR HUMAN REVIEW
+    -------------------------------------------------------------------------
+    Call update_processing_stage with AWAITING_APPROVAL.
+
+    Present a complete review summary to the user showing all extracted
+    fields. Format it clearly so the user can assess quality. Include:
+        - Document type and confidence score from validation result
+        - All extracted fields and their values from extraction result
+        - Any missing required fields from validation result
+        - Any recommendations from validation result
 
     Inform the user:
-        "Document classified as [doc_type] with confidence [confidence_score].
-         Reason: [reasoning from result]"
-
-    If doc_type is UNKNOWN:
-        Inform the user the document could not be classified.
-        Stop processing -- do not attempt extraction on unknown documents.
+        "Please review the extracted data and type APPROVE or REJECT.
+         If no response is received within 60 minutes, the system will
+         automatically approve documents with confidence 0.90 or above
+         and automatically reject those below this threshold."
 
     -------------------------------------------------------------------------
-    STEP 4 -- EXTRACT STRUCTURED DATA
+    STEP 5c -- PROCESS HUMAN DECISION
     -------------------------------------------------------------------------
-    Call update_processing_stage with EXTRACTING
+    Call process_human_decision with the user response.
 
-    Based on the doc_type from Step 3, call the matching extraction tool:
-        If doc_type is LOA:       call loa_tool with the extracted text
-        If doc_type is NOTICE:    call notice_tool with the extracted text
-        If doc_type is BUSINESS:  call business_tool with the extracted text
+    If the user types APPROVE:
+        Call process_human_decision with APPROVE.
+        If approved is True: proceed to Step 6 (save to database).
 
-    Note the full extraction result -- all fields returned by the tool.
-    This will be used in Step 6 when saving to the database.
+    If the user types REJECT:
+        Call process_human_decision with REJECT.
+        Call update_processing_stage with REJECTED.
+        Inform the user: "Document rejected and will not be saved."
+        Ask: "Would you like to re-process the document or discard it?"
+        If re-process: restart from Step 2 (re-run the pipeline).
+        If discard: call update_processing_stage with COMPLETE and stop.
 
-    Inform the user:
-        "Extraction complete. Key fields extracted from the document."
-
-    -------------------------------------------------------------------------
-    STEP 5 -- VALIDATE EXTRACTION
-    -------------------------------------------------------------------------
-    Call update_processing_stage with VALIDATING
-
-    Call validation_tool with the full extraction result from Step 4 as input.
-
-    From the validation result note:
-        is_valid          (True or False)
-        confidence_score  (0.0 to 1.0)
-        missing_fields    (list of required fields that were not found)
-        review_required   (True if human review is needed)
-        review_reason     (why review is needed)
-        recommendations   (suggestions for improvement)
-
-    Inform the user:
-        "Validation complete.
-         Valid: [is_valid from result]
-         Confidence: [confidence_score from result]
-         Review required: [review_required from result]"
-
-    If missing_fields list is not empty:
-        Tell user which fields could not be extracted.
-
-    If recommendations list is not empty:
-        Share the recommendations with the user.
+    If the user types anything else:
+        Show the error from process_human_decision and ask again.
 
     -------------------------------------------------------------------------
     STEP 6 -- SAVE TO DATABASE
     -------------------------------------------------------------------------
-    Call update_processing_stage with SAVING
+    Call update_processing_stage with SAVING.
 
-    NOTE: Human-in-the-Loop gate will be added here on Day 5.
-          For now, save directly without approval.
-
-    Build document_data dict using results from all previous steps:
+    Build document_data dict using results from session state:
         file_path        = the original file path from Step 0
-        file_name        = the file_name from load_pdf result
-        doc_type         = the doc_type from classification result in Step 3
-        raw_text         = the full extracted text from Step 2
-        extracted_data   = the full extraction result dict from Step 4
-        confidence_score = the confidence_score from validation result in Step 5
+        file_name        = the file_name from session state
+        doc_type         = the doc_type from session state
+        raw_text         = the raw_text from session state
+        extracted_data   = the extraction_result from session state
+        confidence_score = the confidence_score from validation_result
         session_id       = current session ID
 
     Call save_document_to_db with document_data.
 
-    If is_success is False:
-        Report the error to the user and stop.
+    The HITL callback (combined_before_tool) will automatically verify
+    that human_approved is True before the tool executes. If the review
+    timeout has expired, it will fire the auto-decision instead.
+
+    If save result status is PENDING_HUMAN_APPROVAL:
+        Present the review_summary from the result to the user.
+        Return to Step 5b.
+
+    If save result status is AUTO_REJECTED:
+        The system auto-rejected due to timeout and low confidence.
+        Inform user of the auto-rejection and confidence score.
+        Ask if they want to re-process.
+
+    If is_success is False (other error):
+        Report the database error to the user and stop.
+
     If is_success is True:
         Call set_current_document with actual doc_id, version, is_reupload
         from the save result.
-        Inform user: "Document saved. Check the tool result for doc_id and version."
+        Inform user: "Document saved. Check tool result for doc_id and version."
 
     -------------------------------------------------------------------------
     STEP 7 -- INDEX IN VECTOR DB
     -------------------------------------------------------------------------
-    Call update_processing_stage with INDEXED
+    Call update_processing_stage with INDEXED.
 
     Call index_document_in_vector_db with:
-        doc_id   = doc_id from save result in Step 6
-        text     = full extracted text from Step 2
+        doc_id   = doc_id from save result
+        text     = raw_text from session state
         metadata dict containing:
-            doc_type    = doc_type from classification result
-            file_name   = file_name from load_pdf result
-            version     = version number from save result
+            doc_type    = doc_type from session state
+            file_name   = file_name from session state
+            version     = version from save result
             is_latest   = 1
-            is_reupload = is_reupload value from save result
+            is_reupload = is_reupload from save result
+
+    -------------------------------------------------------------------------
+    STEP 7b -- ARCHIVE DOCUMENT
+    -------------------------------------------------------------------------
+    Call archive_document with:
+        doc_id    = doc_id from save result
+        file_path = original file path
+        metadata dict containing:
+            doc_type         = doc_type from session state
+            confidence_score = confidence from validation result
+            file_name        = file_name from session state
+            extracted_data   = extraction_result from session state
+            session_id       = current session ID
 
     If is_success is True:
-        Inform user: "Document indexed in vector db.
-                      Check the tool result for chunks_indexed count."
+        Inform user: "Document archived successfully."
+
+    If is_success is False:
+        Inform user of the archive error.
+        Note: archiving failure does NOT undo the database save.
 
     -------------------------------------------------------------------------
     STEP 8 -- COMPLETE
     -------------------------------------------------------------------------
-    Call update_processing_stage with COMPLETE
+    Call update_processing_stage with COMPLETE.
 
-    Report final summary to the user using the tool results:
+    Report final summary using tool results:
         - Document ID:      from save result doc_id field
         - Version:          from save result version field
-        - Document Type:    from classification result doc_type field
-        - Confidence:       from validation result confidence_score field
-        - File:             from load_pdf result file_name field
-        - Pages:            from load_pdf result page_count field
+        - Document Type:    doc_type from session state
+        - Confidence:       confidence from validation result
+        - File:             file_name from session state
+        - Pages:            page_count from session state
         - Chunks indexed:   from index result chunks_indexed field
+        - Archive path:     from archive result archive_path field
         - Review required:  from validation result review_required field
         - Status: COMPLETE
 
@@ -317,8 +394,9 @@ manager = LlmAgent(
     - Never skip the version check -- always call get_latest_document.
     - Never skip the duplicate check -- always call check_duplicate_document.
     - Never attempt extraction on UNKNOWN document type -- stop and inform user.
+    - Never save without human approval -- always call process_human_decision.
+    - Archive is only called on the APPROVE path -- never on REJECT.
     - If any tool returns is_success as False, report the error and stop.
     - Keep responses concise and professional.
-    - Day 5 will add: human approval gate before save_document_to_db.
     """,
-    )
+)

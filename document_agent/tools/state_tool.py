@@ -1,39 +1,39 @@
 from datetime import datetime
 from google.adk.tools import ToolContext
 VALID_STAGES = [
-    "LOADING",
-    "CLASSIFYING",
-    "EXTRACTING",
-    "VALIDATING",
-    "AWAITING_APPROVAL",
-    "SAVING",
-    "INDEXED",
-    "ARCHIVED",
-    "COMPLETE",
-    "REJECTED",
-    "ERROR",
-]
+        "LOADING",
+        "LOADED",            
+        "CLASSIFYING",
+        "EXTRACTING",
+        "EXTRACTED",         
+        "VALIDATING",
+        "AWAITING_APPROVAL",
+        "SAVING",
+        "INDEXED",
+        "ARCHIVED",
+        "COMPLETE",
+        "REJECTED",
+        "ERROR",
+        "PIPELINE_RUNNING",  
+        "BATCH_LOADING",     
+        "BATCH_COMPLETE",   
+    ]
+
 
 def update_processing_stage(stage: str,
                              tool_context: ToolContext) -> dict:
     """Updates the current processing stage in session state.
 
     Sets the processing_stage key in session state so the manager
-    agent always knows where in the workflow it is. The stage value
-    is injected into the manager instruction via {processing_stage}.
+    agent always knows where in the workflow it is. When the stage
+    is set to AWAITING_APPROVAL, also records the review start
+    timestamp so the auto-timeout mechanism can track elapsed time.
 
     Valid stages:
-        LOADING          -> reading the PDF file
-        CLASSIFYING      -> classification agent running
-        EXTRACTING       -> extraction agent running
-        VALIDATING       -> validation agent running
-        AWAITING_APPROVAL -> waiting for human APPROVE / REJECT
-        SAVING           -> saving to SQLite database
-        INDEXED          -> indexed in ChromaDB vector db
-        ARCHIVED         -> document archived to storage/archive/
-        COMPLETE         -> all steps done successfully
-        REJECTED         -> human rejected the document
-        ERROR            -> an error occurred during processing
+        LOADING, LOADED, CLASSIFYING, EXTRACTING, EXTRACTED,
+        VALIDATING, AWAITING_APPROVAL, SAVING, INDEXED, ARCHIVED,
+        COMPLETE, REJECTED, ERROR, PIPELINE_RUNNING, BATCH_LOADING,
+        BATCH_COMPLETE
 
     Args:
         stage       : One of the valid stage strings listed above
@@ -43,7 +43,7 @@ def update_processing_stage(stage: str,
         dict with keys:
             is_success (bool) : True if stage was updated
             stage      (str)  : the stage that was set
-            previous   (str)  : the stage that was set before this call
+            previous   (str)  : the stage before this call
             timestamp  (str)  : ISO timestamp of the update
             message    (str)  : confirmation message
             error      (str)  : error message if is_success is False
@@ -71,15 +71,24 @@ def update_processing_stage(stage: str,
         return result
 
     try:
-        # -- Read current stage before updating -
+        # -- Read current stage before updating ------------------------------
         previous_stage = tool_context.state.get("processing_stage", "NOT_SET")
         result["previous"] = previous_stage
 
-        # -- Update state keys 
+        # -- Update state keys -----------------------------------------------
         now = datetime.utcnow().isoformat()
 
         tool_context.state["processing_stage"] = stage_upper
         tool_context.state["stage_updated_at"] = now
+
+        # -- Set review_started_at when entering AWAITING_APPROVAL ----------
+        # This timestamp is read by _is_review_timed_out in
+        # human_review_callback.py to determine if the review timeout
+        # has expired. Setting it here ensures the timer starts exactly
+        # when the human review stage begins.
+        if stage_upper == "AWAITING_APPROVAL":
+            tool_context.state["review_started_at"] = now
+            print(f"Review timer started at: {now}")
 
         result["is_success"] = True
         result["stage"]      = stage_upper
@@ -99,20 +108,18 @@ def update_processing_stage(stage: str,
         result["error"] = f"State update error: {str(e)}"
         return result
 
-def set_current_document(file_path:   str,
-                          version:     int,
-                          doc_id:      str,
-                          is_reupload: bool,
+
+def set_current_document(file_path:    str,
+                          version:      int,
+                          doc_id:       str,
+                          is_reupload:  bool,
                           tool_context: ToolContext) -> dict:
     """Sets the current document and version details in session state.
 
     Stores all document-related state keys in one call so the manager
-    agent has full context about the document being processed. These
-    values are injected into the manager instruction via template syntax:
-        {current_doc_path}
-        {current_doc_version}
-        {current_doc_id}
-        {is_reupload}
+    agent has full context about the document being processed. Resets
+    approval and timeout state to ensure clean processing for each
+    new document.
 
     Args:
         file_path   : Absolute path to the document file
@@ -123,13 +130,14 @@ def set_current_document(file_path:   str,
 
     Returns:
         dict with keys:
-            is_success   (bool) : True if state was updated
-            file_path    (str)  : the file_path that was set
-            version      (int)  : the version that was set
-            doc_id       (str)  : the doc_id that was set
-            is_reupload  (bool) : the is_reupload flag that was set
-            message      (str)  : confirmation message
-            error        (str)  : error message if is_success is False
+            is_success          (bool) : True if state was updated
+            file_path           (str)  : the file_path that was set
+            version             (int)  : the version that was set
+            doc_id              (str)  : the doc_id that was set
+            is_reupload         (bool) : the is_reupload flag that was set
+            review_timeout_mins (int)  : timeout in minutes (default 60)
+            message             (str)  : confirmation message
+            error               (str)  : error message if is_success is False
     """
     print(f"set_current_document called -- "
           f"file_path: {file_path} | "
@@ -138,16 +146,17 @@ def set_current_document(file_path:   str,
           f"is_reupload: {is_reupload}")
 
     result = {
-        "is_success":  False,
-        "file_path":   file_path,
-        "version":     version,
-        "doc_id":      doc_id,
-        "is_reupload": is_reupload,
-        "message":     None,
-        "error":       None,
+        "is_success":          False,
+        "file_path":           file_path,
+        "version":             version,
+        "doc_id":              doc_id,
+        "is_reupload":         is_reupload,
+        "review_timeout_mins": 60,
+        "message":             None,
+        "error":               None,
     }
 
-    # -- Validate required fields ----
+    # -- Validate required fields --------------------------------------------
     if not file_path:
         result["error"] = "file_path is required"
         print(f"ERROR -- {result['error']}")
@@ -168,9 +177,19 @@ def set_current_document(file_path:   str,
         tool_context.state["is_reupload"]         = bool(is_reupload)
         tool_context.state["doc_state_set_at"]    = now
 
+        # -- Reset approval state for this new document ----------------------
+        # Clear any leftover approval state from previous documents
         tool_context.state["human_approved"]  = False
         tool_context.state["pending_review"]  = False
         tool_context.state["pending_data"]    = None
+
+        # -- Reset timeout state for this new document ----------------------
+        # These keys are read by human_review_callback._is_review_timed_out
+        # and _handle_auto_decision. Must be reset for each new document
+        # so timeout from a previous document does not affect the current one.
+        tool_context.state["review_started_at"]   = None
+        tool_context.state["review_timeout_mins"] = 60
+        tool_context.state["auto_decision_fired"] = False
 
         result["is_success"] = True
         result["message"]    = (
@@ -183,8 +202,12 @@ def set_current_document(file_path:   str,
               f"doc_id: {doc_id} | "
               f"version: {version} | "
               f"is_reupload: {is_reupload}")
-        print(f" Approval state reset: "
+        print(f"Approval state reset: "
               f"human_approved=False, pending_review=False")
+        print(f"Timeout state reset: "
+              f"review_started_at=None, "
+              f"review_timeout_mins=60, "
+              f"auto_decision_fired=False")
         return result
 
     except Exception as e:
