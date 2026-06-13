@@ -23,7 +23,7 @@ def get_documents_in_folder(folder_path: str) -> dict:
             count       (int)        : total number of PDF files found
             error       (str)        : error message if is_success is False
     """
-    print(f"get_documents_in_folder called -- "
+    print(f"get_documents_in_folder called "
           f"folder: {folder_path}")
 
     result = {
@@ -36,31 +36,29 @@ def get_documents_in_folder(folder_path: str) -> dict:
 
     if not folder_path or not folder_path.strip():
         result["error"] = "folder_path is required"
-        print(f"ERROR -- {result['error']}")
+        print(f"ERROR - {result['error']}")
         return result
 
     folder = Path(folder_path)
 
-    # -- Validate folder path ------------------------------------------------
     if not folder.exists():
         result["error"] = f"Folder not found: {folder_path}"
-        print(f"ERROR -- {result['error']}")
+        print(f"ERROR -{result['error']}")
         return result
 
     if not folder.is_dir():
         result["error"] = f"Path is not a folder: {folder_path}"
-        print(f"ERROR -- {result['error']}")
+        print(f"ERROR - {result['error']}")
         return result
 
     try:
-        # -- Scan for PDF files (case-insensitive) ---------------------------
         pdf_files = []
 
         for item in sorted(folder.iterdir()):
             if item.is_file() and item.suffix.lower() == ".pdf":
                 pdf_files.append(str(item.resolve()))
 
-        print(f"Scan complete -- "
+        print(f"Scan complete -"
               f"found {len(pdf_files)} PDF file(s) in: {folder_path}")
 
         for pdf in pdf_files:
@@ -71,18 +69,18 @@ def get_documents_in_folder(folder_path: str) -> dict:
         result["count"]      = len(pdf_files)
 
         if len(pdf_files) == 0:
-            print(f"WARNING -- no PDF files found in folder")
+            print(f"WARNING : no PDF files found in folder")
 
         return result
 
     except PermissionError as e:
         result["error"] = f"Permission denied reading folder: {str(e)}"
-        print(f"ERROR -- {result['error']}")
+        print(f"ERROR - {result['error']}")
         return result
 
     except Exception as e:
         result["error"] = f"Unexpected error scanning folder: {str(e)}"
-        print(f"ERROR -- {type(e).__name__}: {e}")
+        print(f"ERROR - {type(e).__name__}: {e}")
         return result
 
 def generate_batch_summary(tool_context: ToolContext) -> dict:
@@ -129,7 +127,6 @@ def generate_batch_summary(tool_context: ToolContext) -> dict:
     }
 
     try:
-        # -- Read batch results from shared state ----------------------------
         raw = tool_context.state.get("app:batch_results", None)
 
         if raw is None:
@@ -138,16 +135,15 @@ def generate_batch_summary(tool_context: ToolContext) -> dict:
                 "Key app:batch_results is not set. "
                 "Ensure documents were processed before calling this tool."
             )
-            print(f"ERROR -- {result['error']}")
+            print(f"ERROR - {result['error']}")
             return result
 
-        # -- Parse batch results ---------------------------------------------
         if isinstance(raw, str):
             try:
                 batch_results = json.loads(raw)
             except json.JSONDecodeError as e:
                 result["error"] = f"Could not parse batch_results JSON: {str(e)}"
-                print(f"ERROR -- {result['error']}")
+                print(f"ERROR - {result['error']}")
                 return result
         elif isinstance(raw, list):
             batch_results = raw
@@ -165,7 +161,6 @@ def generate_batch_summary(tool_context: ToolContext) -> dict:
             result["total_processed"] = 0
             return result
 
-        # -- Calculate summary statistics ------------------------------------
         total       = len(batch_results)
         successful  = 0
         failed      = 0
@@ -198,7 +193,6 @@ def generate_batch_summary(tool_context: ToolContext) -> dict:
                 sum(confidence_scores) / len(confidence_scores), 4
             )
 
-        # -- Populate result -------------------------------------------------
         result["is_success"]      = True
         result["total_processed"] = total
         result["successful"]      = successful
@@ -218,5 +212,5 @@ def generate_batch_summary(tool_context: ToolContext) -> dict:
 
     except Exception as e:
         result["error"] = f"Unexpected error generating summary: {str(e)}"
-        print(f"ERROR -- {type(e).__name__}: {e}")
+        print(f"ERROR - {type(e).__name__}: {e}")
         return result

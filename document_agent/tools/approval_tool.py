@@ -97,7 +97,7 @@ def process_human_decision(decision:     str,
         "error":      None,
     }
 
-    # -- Validate decision input ---------------------------------------------
+    # -- Validate decision input 
     if not decision or not decision.strip():
         result["error"] = (
             "Decision cannot be empty. "
@@ -117,7 +117,7 @@ def process_human_decision(decision:     str,
         print(f" ERROR -- invalid decision: '{decision}'")
         return result
 
-    # -- Read session identifiers --------------------------------------------
+    # -- Read session identifiers 
     session_id = ""
     user_id    = ""
 
@@ -130,7 +130,7 @@ def process_human_decision(decision:     str,
     except Exception:
         pass
 
-    # -- Read current doc info from state ------------------------------------
+    # -- Read current doc info from state 
     doc_id    = tool_context.state.get("current_doc_id",  "UNKNOWN")
     file_name = ""
     try:
@@ -146,7 +146,6 @@ def process_human_decision(decision:     str,
 
         try:
             # Set human_approved = True in session state
-            # The HITL callback reads this on the next save_document_to_db call
             tool_context.state["human_approved"]    = True
             tool_context.state["pending_review"]    = False
             tool_context.state["approval_timestamp"] = datetime.utcnow().isoformat()
@@ -223,6 +222,5 @@ def process_human_decision(decision:     str,
             result["error"] = f"Failed to record rejection: {str(e)}"
             return result
 
-    # Should never reach here given the validation above
     result["error"] = "Unexpected error in process_human_decision"
     return result

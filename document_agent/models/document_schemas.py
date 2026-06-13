@@ -3,11 +3,6 @@ from enum import Enum
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-
-# ============================================================================
-# ENUMS
-# ============================================================================
-
 class DocumentType(str, Enum):
     """Supported document types for classification."""
     LOA      = "LOA"       # Letter of Authorization
@@ -22,11 +17,6 @@ class SignatureStatus(str, Enum):
     UNSIGNED = "unsigned"
     UNKNOWN  = "unknown"
 
-
-# ============================================================================
-# BASE DOCUMENT
-# ============================================================================
-
 class DocumentBase(BaseModel):
     """Base fields shared across all document types."""
 
@@ -39,11 +29,6 @@ class DocumentBase(BaseModel):
     processed_at: datetime       = Field(default_factory=datetime.utcnow,
                                          description="UTC timestamp of processing")
     session_id:   str            = Field("",   description="ADK session ID for traceability")
-
-
-# ============================================================================
-# DOCUMENT TYPE SCHEMAS
-# ============================================================================
 
 class LOADocument(DocumentBase):
     """Extracted fields from a Letter of Authorization document."""
@@ -123,11 +108,6 @@ class BusinessDocument(DocumentBase):
         description="Contract IDs, invoice numbers, PO numbers, reference codes"
     )
 
-
-# ============================================================================
-# CLASSIFICATION RESULT
-# ============================================================================
-
 class ClassificationResult(BaseModel):
     """Result returned by the Classification Agent."""
 
@@ -153,11 +133,6 @@ class ClassificationResult(BaseModel):
             "business_doc_agent / none"
         )
     )
-
-
-# ============================================================================
-# VALIDATION RESULT
-# ============================================================================
 
 class ValidationResult(BaseModel):
     """Result returned by the Validation Agent."""

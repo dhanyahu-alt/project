@@ -36,7 +36,7 @@ def extract_text_from_image(image_path: str) -> dict:
         "error":           None,
     }
 
-    # -- Validate the image path ---------------------------------------------
+    # -- Validate the image path 
     path = Path(image_path)
 
     if not path.exists():
@@ -58,25 +58,20 @@ def extract_text_from_image(image_path: str) -> dict:
     try:
         print(f"[ocr_tool] Loading image: {image_path}")
 
-        # -- Load image using Pillow and convert to bytes --------------------
         with Image.open(image_path) as img:
-            # Convert to RGB if image is in RGBA or palette mode
             if img.mode not in ("RGB", "L"):
                 print(f"Inside OCR Converting image mode {img.mode} -> RGB ...")
                 img = img.convert("RGB")
 
-            # Save to bytes buffer as JPEG for Gemini
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=95)
             image_bytes = buffer.getvalue()
 
         print(f"Inside OCR Image loaded — Size: {len(image_bytes)} bytes")
 
-        # -- Encode image to base64 for Gemini API ---------------------------
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         print(f"Inside OCR Image encoded to base64 successfully")
 
-        # -- Build Gemini Vision request -------------------------------------
         print(f"Inside OCR Sending image to Gemini Vision ({MODEL_FLASH}) ...")
 
         #model = genai.GenerativeModel(model_name=MODEL_FLASH)
@@ -262,7 +257,7 @@ def analyze_document_layout(image_path: str) -> dict:
         "error":               None,
     }
 
-    # -- Validate path -------------------------------------------------------
+    # -- Validate path 
     path = Path(image_path)
     if not path.exists():
         result["error"] = f"Image file not found: {image_path}"
@@ -332,7 +327,6 @@ def analyze_document_layout(image_path: str) -> dict:
             ]
         )
 
-        # -- Parse structured response ---------------------------------------
         response_text = response.text.strip() if response.text else ""
         print(f"OCR Layout analysis response received — parsing ")
 

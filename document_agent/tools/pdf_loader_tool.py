@@ -43,7 +43,7 @@ def load_pdf(file_path: str) -> dict:
         "error":      None,
     }
 
-    # -- Cases to check for file validity ------------------------------------
+    # -- Cases to check for file validity 
     path = Path(file_path)
 
     if not path.exists():
@@ -58,7 +58,7 @@ def load_pdf(file_path: str) -> dict:
         result["error"] = f"File is not a PDF (extension: {path.suffix}): {file_path}"
         return result
 
-    # -- Open and process the PDF --------------------------------------------
+    # -- Open and process the PDF 
     doc = None
     try:
         print(f"Opening PDF: {file_path}")
@@ -72,7 +72,6 @@ def load_pdf(file_path: str) -> dict:
             result["error"] = "PDF has no pages."
             return result
 
-        # -- Extract text page by page ---------------------------------------
         pages_text = []
         full_text_parts = []
 
@@ -91,13 +90,13 @@ def load_pdf(file_path: str) -> dict:
         total_chars = sum(len(p) for p in pages_text)
         print(f"PDF Text extraction complete — Total characters: {total_chars}")
 
-        # -- Detect scanned / image-based PDF --------------------------------
+        # -- Detect scanned / image-based PDF 
         avg_chars_per_page = total_chars / page_count if page_count > 0 else 0
         result["is_scanned"] = avg_chars_per_page < 50
         print(f"PDF Avg chars/page: {avg_chars_per_page:.1f} — "
               f"Is scanned: {result['is_scanned']}")
 
-        # -- Extract document keydata ----------------------------------------
+        # -- Extract document keydata 
         print(f"PDF Reading document for fetching keydata ...")
         raw_meta = doc.metadata or {}
 

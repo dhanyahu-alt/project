@@ -188,7 +188,7 @@ def add_document_to_vector_db(doc_id:   str,
     try:
         collection = get_collection()
 
-        # -- Step 1: Chunk the text ------------------------------------------
+        # -- Step 1: Chunk the text 
         chunks = chunk_text(text)
         if not chunks:
             print(f"vector Db ERROR -- no chunks produced for: {doc_id}")
@@ -196,7 +196,7 @@ def add_document_to_vector_db(doc_id:   str,
 
         total_chunks = len(chunks)
 
-        # -- Step 2: Generate embeddings and collect for batch upsert --------
+        # -- Step 2: Generate embeddings and collect for batch upsert 
         embeddings = []
         documents  = []
         metadatas  = []
@@ -230,12 +230,10 @@ def add_document_to_vector_db(doc_id:   str,
             metadatas.append(chunk_metadata)
             ids.append(chunk_id)
 
-            # Small delay to stay within Gemini embedding rate limits
             if idx < total_chunks - 1:
                 time.sleep(RATE_LIMIT_DELAY_SEC / 10)
-                # embedding model allows 1500 RPM so delay is minimal
 
-        # -- Step 3: Batch upsert to ChromaDB --------------------------------
+        # -- Step 3: Batch upsert to ChromaDB 
         print(f"Vector Db Upserting {total_chunks} chunks to ChromaDB")
         collection.upsert(
             ids=ids,

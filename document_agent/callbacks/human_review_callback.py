@@ -10,11 +10,6 @@ from ..storage.database import get_connection
 # Confidence threshold for auto-approval decision
 CONFIDENCE_THRESHOLD = 0.90
 
-
-# ============================================================================
-# HELPER -- Write HITL-specific audit record
-# ============================================================================
-
 def _write_hitl_audit(session_id:     str,
                       user_id:        str,
                       event_type:     str,
@@ -55,15 +50,10 @@ def _write_hitl_audit(session_id:     str,
                 )
             )
             conn.commit()
-        print(f"[hitl_callback] Audit written: {event_type}")
+        print(f"Audit written: {event_type}")
     except Exception as e:
-        print(f"[hitl_callback] WARNING -- audit write failed: "
+        print(f"WARNING -- audit write failed: "
               f"{type(e).__name__}: {e}")
-
-
-# ============================================================================
-# HELPER -- Check if review timeout has expired
-# ============================================================================
 
 def _is_review_timed_out(tool_context: ToolContext) -> bool:
     """Checks whether the human review timeout period has expired.
@@ -84,7 +74,7 @@ def _is_review_timed_out(tool_context: ToolContext) -> bool:
         timeout_mins = tool_context.state.get("review_timeout_mins", 60)
 
         if not started_at:
-            print(f"[hitl_callback] review_started_at not set -- "
+            print(f"review_started_at not set -- "
                   f"timeout check skipped")
             return False
 
@@ -92,26 +82,21 @@ def _is_review_timed_out(tool_context: ToolContext) -> bool:
         elapsed  = datetime.utcnow() - start_dt
         elapsed_mins = elapsed.total_seconds() / 60
 
-        print(f"[hitl_callback] Review elapsed: {elapsed_mins:.1f} min "
+        print(f"Review elapsed: {elapsed_mins:.1f} min "
               f"(timeout: {timeout_mins} min)")
 
         if elapsed_mins > timeout_mins:
-            print(f"[hitl_callback] TIMEOUT -- review period expired after "
+            print(f"TIMEOUT -- review period expired after "
                   f"{elapsed_mins:.1f} minutes")
             return True
 
-        print(f"[hitl_callback] Review still within timeout period")
+        print(f"Review still within timeout period")
         return False
 
     except Exception as e:
-        print(f"[hitl_callback] WARNING -- timeout check error: "
+        print(f"WARNING -- timeout check error: "
               f"{type(e).__name__}: {e}")
         return False
-
-
-# ============================================================================
-# HELPER -- Handle auto-decision after timeout
-# ============================================================================
 
 def _handle_auto_decision(tool_context: ToolContext,
                            args:        dict,
@@ -137,11 +122,11 @@ def _handle_auto_decision(tool_context: ToolContext,
         None  -- if auto-approved (allows save_document_to_db to execute)
         dict  -- if auto-rejected (blocks save_document_to_db)
     """
-    print(f"[hitl_callback] _handle_auto_decision called")
+    print(f"_handle_auto_decision called")
 
     # -- Prevent double-firing -----------------------------------------------
     if tool_context.state.get("auto_decision_fired", False):
-        print(f"[hitl_callback] auto_decision already fired -- skipping")
+        print(f"auto_decision already fired -- skipping")
         # If previously auto-approved, human_approved is True -- allow save
         if tool_context.state.get("human_approved", False):
             return None
@@ -166,14 +151,11 @@ def _handle_auto_decision(tool_context: ToolContext,
         confidence = 0.0
 
     now = datetime.utcnow().isoformat()
-    print(f"[hitl_callback] Auto-decision -- confidence: {confidence} | "
+    print(f"Auto-decision -- confidence: {confidence} | "
           f"threshold: {CONFIDENCE_THRESHOLD}")
 
-    # ========================================================================
-    # AUTO-APPROVE (confidence >= threshold)
-    # ========================================================================
     if confidence >= CONFIDENCE_THRESHOLD:
-        print(f"[hitl_callback] AUTO-APPROVED -- "
+        print(f"AUTO-APPROVED -- "
               f"confidence {confidence} >= {CONFIDENCE_THRESHOLD}")
 
         # Update session state to reflect auto-approval
@@ -200,11 +182,8 @@ def _handle_auto_decision(tool_context: ToolContext,
         # Return None to ALLOW save_document_to_db to execute
         return None
 
-    # ========================================================================
-    # AUTO-REJECT (confidence < threshold)
-    # ========================================================================
     else:
-        print(f"[hitl_callback] AUTO-REJECTED -- "
+        print(f"AUTO-REJECTED -- "
               f"confidence {confidence} < {CONFIDENCE_THRESHOLD}")
 
         # Update session state to reflect auto-rejection
@@ -244,11 +223,6 @@ def _handle_auto_decision(tool_context: ToolContext,
             "threshold":  CONFIDENCE_THRESHOLD,
         }
 
-
-# ============================================================================
-# HUMAN-IN-THE-LOOP GATE (updated with timeout check)
-# ============================================================================
-
 def before_save_to_db_callback(tool_context: ToolContext,
                                 args: dict) -> Optional[dict]:
     """Human-in-the-Loop gate -- intercepts save_document_to_db.
@@ -271,7 +245,7 @@ def before_save_to_db_callback(tool_context: ToolContext,
         None -- if approved (human or auto) -- ALLOWS tool to execute
         dict -- if blocked (pending or auto-rejected) -- SKIPS tool
     """
-    print(f"[hitl_callback] before_save_to_db_callback fired")
+    print(f"before_save_to_db_callback fired")
 
     session_id = ""
     user_id    = ""
@@ -286,14 +260,12 @@ def before_save_to_db_callback(tool_context: ToolContext,
         pass
 
     try:
-        # ====================================================================
-        # CHECK 1 -- Has the human already approved?
-        # ====================================================================
+        #Has the human already approved?
         human_approved = tool_context.state.get("human_approved", False)
-        print(f"[hitl_callback] human_approved = {human_approved}")
+        print(f"human_approved = {human_approved}")
 
         if human_approved:
-            print(f"[hitl_callback] Human approved -- allowing save")
+            print(f"Human approved -- allowing save")
 
             _write_hitl_audit(
                 session_id     = session_id,
@@ -310,11 +282,9 @@ def before_save_to_db_callback(tool_context: ToolContext,
             # RETURN None -- ALLOWS the tool to execute
             return None
 
-        # ====================================================================
-        # CHECK 2 -- Has the review timeout expired?
-        # ====================================================================
+        #Has the review timeout expired?
         if _is_review_timed_out(tool_context):
-            print(f"[hitl_callback] Timeout expired -- firing auto-decision")
+            print(f"Timeout expired -- firing auto-decision")
             return _handle_auto_decision(
                 tool_context = tool_context,
                 args         = args,
@@ -322,10 +292,7 @@ def before_save_to_db_callback(tool_context: ToolContext,
                 user_id      = user_id,
             )
 
-        # ====================================================================
-        # CHECK 3 -- Neither approved nor timed out -- request human review
-        # ====================================================================
-        print(f"[hitl_callback] Save blocked -- awaiting human approval")
+        print(f"Save blocked -- awaiting human approval")
 
         # Store pending data in state
         tool_context.state["pending_review"] = True
@@ -366,7 +333,7 @@ def before_save_to_db_callback(tool_context: ToolContext,
         }
 
     except Exception as e:
-        print(f"[hitl_callback] ERROR in before_save_to_db_callback: "
+        print(f"ERROR in before_save_to_db_callback: "
               f"{type(e).__name__}: {e}")
         return {
             "is_success": False,
@@ -377,11 +344,6 @@ def before_save_to_db_callback(tool_context: ToolContext,
             ),
             "error": str(e),
         }
-
-
-# ============================================================================
-# HELPERS -- Sanitize and summarize for review
-# ============================================================================
 
 def _sanitize_args_for_review(args: dict) -> dict:
     """Prepares tool args for storage in session state as pending_data.

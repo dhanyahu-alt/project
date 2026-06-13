@@ -15,7 +15,7 @@ def get_session_service() -> DatabaseSessionService:
     Returns:
         DatabaseSessionService: Configured with sqlite+aiosqlite driver.
     """
-    print(f"[database] Initializing DatabaseSessionService -- "
+    print(f"Initializing DatabaseSessionService -- "
           f"path: {SESSION_DB_PATH}")
     Path(SESSION_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     return DatabaseSessionService(
@@ -35,7 +35,7 @@ def get_connection() -> sqlite3.Connection:
         sqlite3.Connection: Connection to DB_PATH with row_factory set
                             so rows are returned as dicts.
     """
-    print(f"[database] Opening connection to: {DB_PATH}")
+    print(f"Opening connection to: {DB_PATH}")
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
 
@@ -58,7 +58,7 @@ def init_database() -> bool:
     Returns:
         bool: True if initialisation succeeded, False on error.
     """
-    print(f"[database] Initializing database at: {DB_PATH}")
+    print(f"Initializing database at: {DB_PATH}")
 
     create_documents = """
         CREATE TABLE IF NOT EXISTS documents (
@@ -136,12 +136,12 @@ def init_database() -> bool:
             conn.execute(create_audit_trail)
             conn.execute(create_archived_documents)
             conn.commit()
-            print(f"[database] Tables created/verified: documents, "
+            print(f"Tables created/verified: documents, "
                   f"processing_log, audit_trail, archived_documents")
             return True
 
     except sqlite3.Error as e:
-        print(f"[database] ERROR initializing tables: "
+        print(f"ERROR initializing tables: "
               f"{type(e).__name__}: {e}")
         return False
 
@@ -164,7 +164,7 @@ def generate_doc_id(file_name: str, version: int) -> str:
     """
     stem   = Path(file_name).stem   # removes extension
     doc_id = f"{stem}_v{version}"
-    print(f"[database] Generated doc_id: {doc_id} "
+    print(f"Generated doc_id: {doc_id} "
           f"(file: {file_name}, version: {version})")
     return doc_id
 
@@ -191,7 +191,7 @@ def get_next_version(file_name: str) -> tuple:
         Third upload (LoA1_v2 is latest):
             -> (3, "LoA1_v2")
     """
-    print(f"[database] Checking existing versions for: {file_name}")
+    print(f"Checking existing versions for: {file_name}")
     try:
         with get_connection() as conn:
             row = conn.execute(
@@ -205,20 +205,20 @@ def get_next_version(file_name: str) -> tuple:
             ).fetchone()
 
             if row is None:
-                print(f"[database] No existing record -- "
+                print(f"No existing record -- "
                       f"this is a new document (version 1)")
                 return 1, None
             else:
                 current_version = row["version"]
                 current_doc_id  = row["doc_id"]
                 next_version    = current_version + 1
-                print(f"[database] Existing latest: version={current_version} "
+                print(f"Existing latest: version={current_version} "
                       f"doc_id={current_doc_id} -- "
                       f"new version will be: {next_version}")
                 return next_version, current_doc_id
 
     except sqlite3.Error as e:
-        print(f"[database] ERROR in get_next_version: "
+        print(f"ERROR in get_next_version: "
               f"{type(e).__name__}: {e}")
         return 1, None
 
@@ -235,7 +235,7 @@ def mark_previous_version_outdated(file_name: str) -> bool:
     Returns:
         bool: True if update succeeded, False on error.
     """
-    print(f"[database] Marking previous version outdated for: {file_name}")
+    print(f"Marking previous version outdated for: {file_name}")
     try:
         with get_connection() as conn:
             conn.execute(
@@ -248,12 +248,12 @@ def mark_previous_version_outdated(file_name: str) -> bool:
                 (file_name,)
             )
             conn.commit()
-            print(f"[database] Previous version marked is_latest=0 "
+            print(f"Previous version marked is_latest=0 "
                   f"for: {file_name}")
             return True
 
     except sqlite3.Error as e:
-        print(f"[database] ERROR marking previous version outdated: "
+        print(f"ERROR marking previous version outdated: "
               f"{type(e).__name__}: {e}")
         return False
 

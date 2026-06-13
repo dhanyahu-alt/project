@@ -121,12 +121,10 @@ manager = LlmAgent(
     DOCUMENT PROCESSING WORKFLOW:
 
     There are two processing paths depending on user input:
-      Path A: Single document -- user provides a file path
-      Path B: Batch documents -- user provides a folder path
+      Process A: Single document -- user provides a file path
+      Process B: Batch documents -- user provides a folder path
 
-    -------------------------------------------------------------------------
-    PATH B -- BATCH PROCESSING (when user provides a folder path)
-    -------------------------------------------------------------------------
+    Process B -- BATCH PROCESSING (when user provides a folder path)
     If the user provides a folder path instead of a single file path:
 
     Call update_processing_stage with BATCH_LOADING.
@@ -151,14 +149,10 @@ manager = LlmAgent(
             Total processed, successful, failed,
             breakdown by document type, average confidence score.
 
-    -------------------------------------------------------------------------
-    PATH A -- SINGLE DOCUMENT PROCESSING
-    -------------------------------------------------------------------------
+    Process A -- SINGLE DOCUMENT PROCESSING
     When user provides a single file path, follow Steps 0 through 8.
 
-    -------------------------------------------------------------------------
     STEP 0 -- SET STATE
-    -------------------------------------------------------------------------
     Call set_current_document with:
         file_path   = the file path provided by the user
         version     = 1 (placeholder -- will be updated after version check)
@@ -166,9 +160,8 @@ manager = LlmAgent(
         is_reupload = False (placeholder -- will be updated)
     Call update_processing_stage with LOADING
 
-    -------------------------------------------------------------------------
+
     STEP 1 -- VERSION CHECK
-    -------------------------------------------------------------------------
     Extract the file_name from the file path (just the filename e.g. LoA1.pdf)
     Call get_latest_document with the file_name.
 
@@ -182,9 +175,7 @@ manager = LlmAgent(
             "New document detected. This will be saved as version 1."
         Note is_reupload = False.
 
-    -------------------------------------------------------------------------
     STEP 2 -- LOAD AND CLASSIFY AND EXTRACT AND VALIDATE (Pipeline)
-    -------------------------------------------------------------------------
     Call update_processing_stage with PIPELINE_RUNNING.
 
     Run the document_processing_pipeline. The pipeline will:
@@ -211,9 +202,7 @@ manager = LlmAgent(
         - Preview of first 300 characters of raw_text
         - Whether extraction succeeded
 
-    -------------------------------------------------------------------------
     STEP 2b -- DUPLICATE CHECK
-    -------------------------------------------------------------------------
     Call check_duplicate_document with the raw_text from session state.
 
     If is_duplicate is True:
@@ -227,9 +216,7 @@ manager = LlmAgent(
     If is_duplicate is False:
         Continue processing normally.
 
-    -------------------------------------------------------------------------
     STEP 5a -- QUALITY REFINEMENT (if confidence is borderline)
-    -------------------------------------------------------------------------
     After the pipeline completes, check the confidence_score from
     validation_result in session state:
 
@@ -250,9 +237,7 @@ manager = LlmAgent(
         Skip quality refinement -- loop cannot reliably help at this level.
         Proceed directly to Step 5b (human review).
 
-    -------------------------------------------------------------------------
     STEP 5b -- PRESENT FOR HUMAN REVIEW
-    -------------------------------------------------------------------------
     Call update_processing_stage with AWAITING_APPROVAL.
 
     Present a complete review summary to the user showing all extracted
@@ -268,9 +253,7 @@ manager = LlmAgent(
          automatically approve documents with confidence 0.90 or above
          and automatically reject those below this threshold."
 
-    -------------------------------------------------------------------------
     STEP 5c -- PROCESS HUMAN DECISION
-    -------------------------------------------------------------------------
     Call process_human_decision with the user response.
 
     If the user types APPROVE:
@@ -288,9 +271,7 @@ manager = LlmAgent(
     If the user types anything else:
         Show the error from process_human_decision and ask again.
 
-    -------------------------------------------------------------------------
     STEP 6 -- SAVE TO DATABASE
-    -------------------------------------------------------------------------
     Call update_processing_stage with SAVING.
 
     Build document_data dict using results from session state:
@@ -325,9 +306,7 @@ manager = LlmAgent(
         from the save result.
         Inform user: "Document saved. Check tool result for doc_id and version."
 
-    -------------------------------------------------------------------------
     STEP 7 -- INDEX IN VECTOR DB
-    -------------------------------------------------------------------------
     Call update_processing_stage with INDEXED.
 
     Call index_document_in_vector_db with:
@@ -340,9 +319,7 @@ manager = LlmAgent(
             is_latest   = 1
             is_reupload = is_reupload from save result
 
-    -------------------------------------------------------------------------
     STEP 7b -- ARCHIVE DOCUMENT
-    -------------------------------------------------------------------------
     Call archive_document with:
         doc_id    = doc_id from save result
         file_path = original file path
@@ -360,9 +337,7 @@ manager = LlmAgent(
         Inform user of the archive error.
         Note: archiving failure does NOT undo the database save.
 
-    -------------------------------------------------------------------------
     STEP 8 -- COMPLETE
-    -------------------------------------------------------------------------
     Call update_processing_stage with COMPLETE.
 
     Report final summary using tool results:
@@ -377,9 +352,7 @@ manager = LlmAgent(
         - Review required:  from validation result review_required field
         - Status: COMPLETE
 
-    -------------------------------------------------------------------------
     IMPORTANT RULES:
-    -------------------------------------------------------------------------
     - Always call set_current_document and update_processing_stage FIRST.
     - Never skip the version check -- always call get_latest_document.
     - Never skip the duplicate check -- always call check_duplicate_document.

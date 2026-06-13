@@ -50,7 +50,7 @@ def archive_document(doc_id:       str,
         "error":         None,
     }
 
-    # -- Validate inputs -----------------------------------------------------
+    # -- Validate inputs --
     if not doc_id:
         result["error"] = "doc_id is required"
         print(f"ERROR -- {result['error']}")
@@ -77,20 +77,20 @@ def archive_document(doc_id:       str,
         year     = now.strftime("%Y")
         month    = now.strftime("%m")
 
-        # -- Step A: Build archive directory path ----------------------------
+        # -- Step A: Build archive directory path 
         archive_dir = Path(ARCHIVE_PATH) / year / month / doc_id
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"Archive directory: {archive_dir}")
 
-        # -- Step B: Copy original file to archive ---------------------------
+        # -- Step B: Copy original file to archive 
         dest_file_path = archive_dir / source_path.name
         shutil.copy2(source_path, dest_file_path)
 
         print(f"File copied: "
               f"{source_path.name} -> {dest_file_path}")
 
-        # -- Step C: Build full metadata for sidecar file --------------------
+        # -- Step C: Build full metadata for sidecar file 
         session_id = ""
         user_id    = ""
         try:
@@ -121,16 +121,15 @@ def archive_document(doc_id:       str,
             "archive_month":      month,
         })
 
-        # -- Step D: Write metadata JSON sidecar file ------------------------
         metadata_file_name = f"{doc_id}_metadata.json"
         metadata_path      = archive_dir / metadata_file_name
 
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(full_metadata, f, indent=2, default=str)
 
-        print(f"Metadata sidecar written: {metadata_file_name}")
+        print(f"Metadata written: {metadata_file_name}")
 
-        # -- Step E: Insert into archived_documents table --------------------
+        # -- Step E: Insert into archived_documents table
         archived_at = now.isoformat()
         with get_connection() as conn:
             conn.execute(
@@ -152,7 +151,7 @@ def archive_document(doc_id:       str,
 
         print(f"archived_documents table updated")
 
-        # -- Step F: Update documents table status to ARCHIVED ---------------
+        # -- Step F: Update documents table status to ARCHIVED 
         with get_connection() as conn:
             conn.execute(
                 """
@@ -173,7 +172,7 @@ def archive_document(doc_id:       str,
         print(f"documents table: status set to ARCHIVED "
               f"for doc_id: {doc_id}")
 
-        # -- Populate result -------------------------------------------------
+        # -- Populate result 
         result["is_success"]    = True
         result["archive_path"]  = str(dest_file_path)
         result["metadata_path"] = str(metadata_path)

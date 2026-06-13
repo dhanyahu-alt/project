@@ -51,7 +51,7 @@ def index_document_in_vector_db(doc_id:   str,
         "error":          None,
     }
 
-    # -- Validate inputs -----------------------------------------------------
+    # -- Validate inputs 
     if not doc_id:
         result["error"] = "doc_id is required"
         print(f" ERROR -- {result['error']}")
@@ -75,14 +75,14 @@ def index_document_in_vector_db(doc_id:   str,
         print(f" file_name: {file_name} | "
               f"version: {version} | is_reupload: {is_reupload}")
 
-        # -- Step 1: Mark old chunks outdated if re-upload -------------------
+        # -- Step 1: Mark old chunks outdated if re-upload 
         if is_reupload:
             print(f" Re-upload detected -- "
                   f"marking old chunks outdated for: {file_name}")
             mark_old_chunks_outdated(file_name)
             result["is_reupload"] = True
 
-        # -- Step 2: Build clean metadata for ChromaDB -----------------------
+        # -- Step 2: Build clean metadata for ChromaDB 
         # ChromaDB metadata values must be str, int, or float -- NOT bool
         clean_metadata = {
             "doc_type":  str(metadata.get("doc_type",  "UNKNOWN")),
@@ -91,7 +91,7 @@ def index_document_in_vector_db(doc_id:   str,
             "is_latest": int(metadata.get("is_latest", 1)),
         }
 
-        # -- Step 3: Add document to vector db -------------------------------
+        # -- Step 3: Add document to vector db
         print(f" Indexing document: {doc_id} ...")
         success = add_document_to_vector_db(
             doc_id=doc_id,
@@ -104,7 +104,7 @@ def index_document_in_vector_db(doc_id:   str,
             print(f" ERROR -- indexing failed for: {doc_id}")
             return result
 
-        # -- Step 4: Count chunks indexed ------------------------------------
+        # -- Step 4: Count chunks indexed 
         chunks         = chunk_text(text)
         chunks_indexed = len(chunks)
         result["chunks_indexed"] = chunks_indexed
@@ -121,11 +121,6 @@ def index_document_in_vector_db(doc_id:   str,
               f"{type(e).__name__}: {e}")
         result["error"] = f"Indexing error: {str(e)}"
         return result
-
-
-# ============================================================================
-# FIND SIMILAR DOCUMENTS
-# ============================================================================
 
 def find_similar_documents(query: str, n_results: int = 5) -> dict:
     """Finds semantically similar documents using vector search.
@@ -192,11 +187,6 @@ def find_similar_documents(query: str, n_results: int = 5) -> dict:
               f"{type(e).__name__}: {e}")
         result["error"] = f"Search error: {str(e)}"
         return result
-
-
-# ============================================================================
-# CHECK DUPLICATE DOCUMENT
-# ============================================================================
 
 def check_duplicate_document(text: str,
                               threshold: float = 0.95) -> dict:

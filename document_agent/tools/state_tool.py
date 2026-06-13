@@ -59,7 +59,7 @@ def update_processing_stage(stage: str,
         "error":      None,
     }
 
-    # -- Validate stage value ------------------------------------------------
+    # -- Validate stage value 
     stage_upper = stage.upper().strip()
 
     if stage_upper not in VALID_STAGES:
@@ -71,21 +71,16 @@ def update_processing_stage(stage: str,
         return result
 
     try:
-        # -- Read current stage before updating ------------------------------
+        # -- Read current stage before updating 
         previous_stage = tool_context.state.get("processing_stage", "NOT_SET")
         result["previous"] = previous_stage
 
-        # -- Update state keys -----------------------------------------------
         now = datetime.utcnow().isoformat()
 
         tool_context.state["processing_stage"] = stage_upper
         tool_context.state["stage_updated_at"] = now
 
-        # -- Set review_started_at when entering AWAITING_APPROVAL ----------
-        # This timestamp is read by _is_review_timed_out in
-        # human_review_callback.py to determine if the review timeout
-        # has expired. Setting it here ensures the timer starts exactly
-        # when the human review stage begins.
+        # -- Set review_started_at when entering AWAITING_APPROVAL 
         if stage_upper == "AWAITING_APPROVAL":
             tool_context.state["review_started_at"] = now
             print(f"Review timer started at: {now}")
@@ -156,7 +151,7 @@ def set_current_document(file_path:    str,
         "error":               None,
     }
 
-    # -- Validate required fields --------------------------------------------
+    # -- Validate required fields 
     if not file_path:
         result["error"] = "file_path is required"
         print(f"ERROR -- {result['error']}")
@@ -170,23 +165,17 @@ def set_current_document(file_path:    str,
     try:
         now = datetime.utcnow().isoformat()
 
-        # -- Set all document state keys in one call -------------------------
+        # -- Set all document state keys 
         tool_context.state["current_doc_path"]    = file_path
         tool_context.state["current_doc_version"] = int(version)
         tool_context.state["current_doc_id"]      = doc_id
         tool_context.state["is_reupload"]         = bool(is_reupload)
         tool_context.state["doc_state_set_at"]    = now
 
-        # -- Reset approval state for this new document ----------------------
-        # Clear any leftover approval state from previous documents
         tool_context.state["human_approved"]  = False
         tool_context.state["pending_review"]  = False
         tool_context.state["pending_data"]    = None
 
-        # -- Reset timeout state for this new document ----------------------
-        # These keys are read by human_review_callback._is_review_timed_out
-        # and _handle_auto_decision. Must be reset for each new document
-        # so timeout from a previous document does not affect the current one.
         tool_context.state["review_started_at"]   = None
         tool_context.state["review_timeout_mins"] = 60
         tool_context.state["auto_decision_fired"] = False
