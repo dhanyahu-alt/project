@@ -1,6 +1,7 @@
 from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.tools.agent_tool import AgentTool
 
+#from ..util.settings import MODEL_FLASH_LITE
 from ..util.settings import MODEL_FLASH
 
 from ..tools.pdf_loader_tool import load_pdf, render_page_as_image
@@ -22,6 +23,7 @@ business_tool = AgentTool(agent=business_doc_agent)
 
 document_loader_agent = LlmAgent(
     name="document_loader_agent",
+    #model=MODEL_FLASH_LITE,
     model=MODEL_FLASH,
     tools=[
         load_pdf,
@@ -79,6 +81,7 @@ document_loader_agent = LlmAgent(
 
 extraction_router_agent = LlmAgent(
     name="extraction_router_agent",
+    #model=MODEL_FLASH_LITE,
     model=MODEL_FLASH,
     tools=[
         loa_tool,

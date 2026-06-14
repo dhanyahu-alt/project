@@ -1,10 +1,12 @@
 from google.adk.agents import LlmAgent
+#from ..util.settings import MODEL_FLASH_LITE
 from ..util.settings import MODEL_FLASH
 from ..models.document_schemas import BusinessDocument
 
 
 business_doc_agent = LlmAgent(
     name="business_doc_agent",
+    #model=MODEL_FLASH_LITE,
     model=MODEL_FLASH,
     output_schema=BusinessDocument,
     instruction="""You are a Business Document data extraction specialist.

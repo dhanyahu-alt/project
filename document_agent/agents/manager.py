@@ -1,5 +1,6 @@
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
+#from ..util.settings import MODEL_FLASH_LITE
 from ..util.settings import MODEL_FLASH
 
 from ..tools.pdf_loader_tool import load_pdf, render_page_as_image
@@ -74,6 +75,7 @@ def combined_before_tool(tool, args, tool_context):
 
 manager = LlmAgent(
     name="document_processing_manager",
+    #model=MODEL_FLASH_LITE,
     model=MODEL_FLASH,
     tools=[
         load_pdf,

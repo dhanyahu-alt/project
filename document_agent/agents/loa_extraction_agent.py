@@ -1,4 +1,5 @@
 from google.adk.agents import LlmAgent
+#from ..util.settings import MODEL_FLASH_LITE
 from ..util.settings import MODEL_FLASH
 from ..models.document_schemas import LOADocument
 
@@ -6,6 +7,7 @@ from ..models.document_schemas import LOADocument
 loa_extraction_agent = LlmAgent(
     name="loa_extraction_agent",
     model=MODEL_FLASH,
+    #model=MODEL_FLASH_LITE,
     output_schema=LOADocument,
     instruction="""You are an LOA (Letter of Authorization) data extraction specialist.
     Your job is to carefully read the provided document text and extract
